@@ -1,0 +1,38 @@
+{% extends base_template %}
+{% load i18n %}
+
+{% block content %}
+<div class="row">
+  <div class="col-12">
+    <div class="card">
+      <h2 class="card-header">{% trans "Custom Objects" %}</h2>
+      {% if linked_custom_objects %}
+        <div class="table-responsive">
+          <table class="table table-hover attr-table mb-0">
+            <thead>
+              <tr>
+                <th>{% trans "Type" %}</th>
+                <th>{% trans "Object" %}</th>
+                <th>{% trans "Field" %}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for obj, field in linked_custom_objects %}
+                <tr>
+                  <td>{{ field.custom_object_type }}</td>
+                  <td><a href="{{ obj.get_absolute_url }}">{{ obj }}</a></td>
+                  <td>{{ field }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div class="card-body text-muted">
+          {% trans "No custom objects are linked to this object." %}
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock content %}

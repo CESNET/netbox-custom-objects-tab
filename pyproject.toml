@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "netbox-custom-objects-tab"
+version = "1.0.0"
+description = "NetBox plugin that adds a Custom Objects tab to object detail pages"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Apache-2.0" }
+keywords = ["netbox", "plugin", "custom-objects"]
+dependencies = []
+
+[project.urls]
+Repository = "https://github.com/your-org/netbox-custom-objects-tab"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["netbox_custom_objects_tab*"]
