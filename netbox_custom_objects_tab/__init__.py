@@ -12,14 +12,10 @@ class NetBoxCustomObjectsTabConfig(PluginConfig):
     min_version = '4.5.0'
     max_version = '4.5.99'
     default_settings = {
-        # List of app_label.model_name strings for models to add the tab to.
-        # Each must be a valid NetBox model with object detail pages.
+        # app_label.model_name strings, or app_label.* to include all models in an app.
         'models': [
-            'dcim.device',
-            'dcim.site',
-            'dcim.rack',
-            'ipam.prefix',
-            'ipam.ipaddress',
+            'dcim.*',
+            'ipam.*',
         ]
     }
 

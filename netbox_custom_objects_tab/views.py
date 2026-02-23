@@ -121,26 +121,41 @@ def register_tabs():
         return
 
     for label in model_labels:
-        try:
-            app_label, model_name = label.lower().split('.', 1)
-            model_class = apps.get_model(app_label, model_name)
-        except (ValueError, LookupError):
-            logger.warning(
-                'netbox_custom_objects_tab: could not find model %r — skipping',
-                label,
-            )
-            continue
+        label = label.lower()
+        if label.endswith('.*'):
+            app_label = label[:-2]
+            try:
+                model_classes = list(apps.get_app_config(app_label).get_models())
+            except LookupError:
+                logger.warning(
+                    'netbox_custom_objects_tab: could not find app %r — skipping',
+                    app_label,
+                )
+                continue
+        else:
+            try:
+                app_label, model_name = label.split('.', 1)
+                model_classes = [apps.get_model(app_label, model_name)]
+            except (ValueError, LookupError):
+                logger.warning(
+                    'netbox_custom_objects_tab: could not find model %r — skipping',
+                    label,
+                )
+                continue
 
-        view_class = _make_tab_view(model_class)
-        # Programmatic equivalent of:
-        #   @register_model_view(model_class, name='custom_objects', path='custom-objects')
-        register_model_view(
-            model_class,
-            name='custom_objects',
-            path='custom-objects',
-        )(view_class)
-        logger.debug(
-            'netbox_custom_objects_tab: registered tab for %s.%s',
-            app_label,
-            model_name,
-        )
+        for model_class in model_classes:
+            app_label = model_class._meta.app_label
+            model_name = model_class._meta.model_name
+            view_class = _make_tab_view(model_class)
+            # Programmatic equivalent of:
+            #   @register_model_view(model_class, name='custom_objects', path='custom-objects')
+            register_model_view(
+                model_class,
+                name='custom_objects',
+                path='custom-objects',
+            )(view_class)
+            logger.debug(
+                'netbox_custom_objects_tab: registered tab for %s.%s',
+                app_label,
+                model_name,
+            )
