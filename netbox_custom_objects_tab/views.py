@@ -2,11 +2,13 @@ import logging
 
 from django.apps import apps
 from django.contrib.contenttypes.models import ContentType
+from django.core.paginator import InvalidPage
 from django.shortcuts import get_object_or_404, render
 from django.views.generic import View
 
 from extras.choices import CustomFieldTypeChoices
 from netbox.plugins import get_plugin_config
+from utilities.paginator import EnhancedPaginator, get_paginate_count
 from utilities.views import ViewTab, register_model_view
 
 logger = logging.getLogger('netbox_custom_objects_tab')
@@ -65,6 +67,22 @@ def _count_linked_custom_objects(instance):
         return None
 
 
+def _filter_linked_objects(linked, q):
+    """
+    Case-insensitive substring search across the object display name,
+    custom object type name, and field label.
+    """
+    q = q.strip().lower()
+    if not q:
+        return linked
+    return [
+        (obj, field) for obj, field in linked
+        if q in str(obj).lower()
+        or q in str(field.custom_object_type).lower()
+        or q in str(field).lower()
+    ]
+
+
 def _make_tab_view(model_class):
     """
     Factory that returns a unique View subclass for model_class.
@@ -89,6 +107,17 @@ def _make_tab_view(model_class):
             instance = get_object_or_404(qs, pk=pk)
             linked = _get_linked_custom_objects(instance)
 
+            # Filtering
+            q = request.GET.get('q', '')
+            linked = _filter_linked_objects(linked, q)
+
+            # Pagination
+            paginator = EnhancedPaginator(linked, get_paginate_count(request))
+            try:
+                page = paginator.page(int(request.GET.get('page', 1)))
+            except (InvalidPage, ValueError):
+                page = paginator.page(1)
+
             return render(
                 request,
                 'netbox_custom_objects_tab/custom_objects_tab.html',
@@ -100,7 +129,9 @@ def _make_tab_view(model_class):
                     'base_template': (
                         f'{instance._meta.app_label}/{instance._meta.model_name}.html'
                     ),
-                    'linked_custom_objects': linked,
+                    'page_obj': page,
+                    'paginator': paginator,
+                    'q': q,
                 },
             )
 

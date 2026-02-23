@@ -5,8 +5,36 @@
 <div class="row">
   <div class="col-12">
     <div class="card">
-      <h2 class="card-header">{% trans "Custom Objects" %}</h2>
-      {% if linked_custom_objects %}
+
+      {# --- header with search form --- #}
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <h2 class="mb-0">{% trans "Custom Objects" %}</h2>
+        <form method="get" class="d-flex align-items-center gap-2">
+          <div class="input-group input-group-sm">
+            <input type="text" name="q" value="{{ q }}"
+                   class="form-control" placeholder="{% trans 'Search...' %}"
+                   aria-label="{% trans 'Search custom objects' %}">
+            <button type="submit" class="btn btn-primary">
+              <i class="mdi mdi-magnify"></i>
+            </button>
+            {% if q %}
+              <a href="?" class="btn btn-outline-secondary" title="{% trans 'Clear search' %}">
+                <i class="mdi mdi-close"></i>
+              </a>
+            {% endif %}
+          </div>
+          {# preserve per_page when submitting the search form #}
+          {% if request.GET.per_page %}
+            <input type="hidden" name="per_page" value="{{ request.GET.per_page }}">
+          {% endif %}
+        </form>
+      </div>
+
+      {# --- top paginator --- #}
+      {% include 'inc/paginator.html' with paginator=paginator page=page_obj placement='top' %}
+
+      {# --- table or empty state --- #}
+      {% if page_obj.object_list %}
         <div class="table-responsive">
           <table class="table table-hover attr-table mb-0">
             <thead>
@@ -17,7 +45,7 @@
               </tr>
             </thead>
             <tbody>
-              {% for obj, field in linked_custom_objects %}
+              {% for obj, field in page_obj.object_list %}
                 <tr>
                   <td>{{ field.custom_object_type }}</td>
                   <td><a href="{{ obj.get_absolute_url }}">{{ obj }}</a></td>
@@ -29,9 +57,17 @@
         </div>
       {% else %}
         <div class="card-body text-muted">
-          {% trans "No custom objects are linked to this object." %}
+          {% if q %}
+            {% trans "No custom objects match your search." %}
+          {% else %}
+            {% trans "No custom objects are linked to this object." %}
+          {% endif %}
         </div>
       {% endif %}
+
+      {# --- bottom paginator --- #}
+      {% include 'inc/paginator.html' with paginator=paginator page=page_obj placement='bottom' %}
+
     </div>
   </div>
 </div>
