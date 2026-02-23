@@ -1,8 +1,11 @@
 # netbox-custom-objects-tab
 
-A NetBox 4.5.x plugin that adds a **Custom Objects** tab to standard object detail pages
-(Device, Site, Rack, etc.), showing any Custom Object instances from the
-`netbox_custom_objects` plugin that reference those objects via OBJECT or MULTIOBJECT fields.
+A NetBox 4.5.x plugin that adds a **Custom Objects** tab to standard object detail pages,
+showing any Custom Object instances from the `netbox_custom_objects` plugin that reference
+those objects via OBJECT or MULTIOBJECT fields.
+
+The tab includes **pagination** and **text search** so it stays usable even when thousands
+of custom objects are linked.
 
 ## Requirements
 
@@ -24,15 +27,10 @@ PLUGINS = [
     'netbox_custom_objects_tab',
 ]
 
+# Optional — defaults shown below
 PLUGINS_CONFIG = {
     'netbox_custom_objects_tab': {
-        'models': [
-            'dcim.device',
-            'dcim.site',
-            'dcim.rack',
-            'ipam.prefix',
-            'ipam.ipaddress',
-        ]
+        'models': ['dcim.*', 'ipam.*']
     }
 }
 ```
@@ -43,10 +41,38 @@ Restart NetBox. No database migrations required.
 
 | Setting  | Default | Description |
 |----------|---------|-------------|
-| `models` | `['dcim.device', 'dcim.site', 'dcim.rack', 'ipam.prefix', 'ipam.ipaddress']` | List of `app_label.model_name` strings for models that should get the Custom Objects tab |
+| `models` | `['dcim.*', 'ipam.*']` | Models that get the Custom Objects tab. Accepts `app_label.model_name` strings **or** `app_label.*` wildcards to register every model in an app. |
+
+### Examples
+
+```python
+# All DCIM and IPAM models (default)
+'models': ['dcim.*', 'ipam.*']
+
+# Only specific models
+'models': ['dcim.device', 'dcim.site', 'ipam.prefix']
+
+# Mix wildcards and specifics
+'models': ['dcim.*', 'virtualization.*', 'ipam.ipaddress']
+```
 
 The tab is hidden automatically (`hide_if_empty=True`) when no custom objects reference
 the object being viewed, so it only appears when relevant.
+
+## Features
+
+### Pagination
+Results are paginated using NetBox's standard `EnhancedPaginator`. The page size respects
+the user's personal NetBox preference and can be overridden with `?per_page=N` in the URL.
+Page controls appear at the top and bottom of the table.
+
+### Text search
+A search box in the card header filters results by:
+- Custom Object instance display name
+- Custom Object Type name
+- Field label
+
+Filtering uses the `?q=` query parameter and is applied before pagination.
 
 ## How It Works
 
@@ -55,9 +81,12 @@ a NetBox model (e.g. Device), any Custom Object instances with that field set wi
 in the "Custom Objects" tab on the referenced object's detail page.
 
 The tab displays:
-- **Type** — the Custom Object Type name
-- **Object** — a link to the Custom Object instance
-- **Field** — the field name that holds the reference
+
+| Column | Content |
+|--------|---------|
+| **Type** | Custom Object Type name |
+| **Object** | Link to the Custom Object instance |
+| **Field** | The field that holds the reference |
 
 ## License
 
