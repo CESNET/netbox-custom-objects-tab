@@ -1,5 +1,11 @@
 # netbox-custom-objects-tab
 
+[![CI](https://github.com/CESNET/netbox-custom-objects-tab/actions/workflows/ci.yml/badge.svg)](https://github.com/CESNET/netbox-custom-objects-tab/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/netbox-custom-objects-tab)](https://pypi.org/project/netbox-custom-objects-tab/)
+[![Python](https://img.shields.io/pypi/pyversions/netbox-custom-objects-tab)](https://pypi.org/project/netbox-custom-objects-tab/)
+[![NetBox](https://img.shields.io/badge/NetBox-4.5.x-blue)](https://github.com/netbox-community/netbox)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
+
 A NetBox 4.5.x plugin that adds a **Custom Objects** tab to standard object detail pages,
 showing any Custom Object instances from the `netbox_custom_objects` plugin that reference
 those objects via OBJECT or MULTIOBJECT fields.
