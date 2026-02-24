@@ -27,3 +27,5 @@ db.sqlite3
 .vscode/
 *.swp
 *.swo
+
+tools/

@@ -7,6 +7,10 @@ those objects via OBJECT or MULTIOBJECT fields.
 The tab includes **pagination** and **text search** so it stays usable even when thousands
 of custom objects are linked.
 
+## Screenshot
+
+![Custom Objects tab showing 3 linked objects with type filter dropdown](https://raw.githubusercontent.com/CESNET/netbox-custom-objects-tab/main/docs/screenshot.png)
+
 ## Requirements
 
 - NetBox 4.5.0 – 4.5.99
