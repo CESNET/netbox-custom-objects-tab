@@ -1,5 +1,9 @@
 # netbox_custom_objects_tab — Project Notes for Claude
 
+## Git Conventions
+
+- **Never** add `Co-Authored-By: Claude` (or any Claude/Anthropic credit) to commit messages.
+
 ## Purpose
 
 Adds a **"Custom Objects"** tab to NetBox object detail pages (Device, Site, Rack, etc.),

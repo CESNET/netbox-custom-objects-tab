@@ -90,6 +90,12 @@ A search box in the card header filters results by:
 
 Filtering uses the `?q=` query parameter and is applied before pagination.
 
+### Type filter
+A dropdown (shown when 2 or more Custom Object Types are present) lets you narrow
+results to a single type. Uses the `?type=<slug>` query parameter. The dropdown
+auto-submits on selection and is populated from the types actually present in the
+current result set.
+
 ### Efficient badge counts
 The tab badge (shown in the tab bar on every detail page) is computed with a
 `COUNT(*)` query per field — no object rows are fetched. Full object rows are only
