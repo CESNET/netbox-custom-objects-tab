@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "netbox-custom-objects-tab"
-version = "1.0.0"
+version = "1.0.1"
 description = "NetBox plugin that adds a Custom Objects tab to object detail pages"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -34,6 +34,9 @@ Issues = "https://github.com/CESNET/netbox-custom-objects-tab/issues"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["netbox_custom_objects_tab*"]
+
+[tool.setuptools.package-data]
+netbox_custom_objects_tab = ["**/*", "templates/**"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

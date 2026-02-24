@@ -33,7 +33,7 @@ the full page.
 
 ```bash
 source /opt/netbox/venv/bin/activate
-pip install -e /opt/custom_objects_additional_tab_plugin/
+pip install netbox-custom-objects-tab
 ```
 
 Add to NetBox `configuration.py`:
