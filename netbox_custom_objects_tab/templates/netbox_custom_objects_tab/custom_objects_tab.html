@@ -1,5 +1,5 @@
 {% extends base_template %}
-{% load i18n %}
+{% load i18n custom_object_buttons perms %}
 
 {% block content %}
 <div class="row">
@@ -35,7 +35,9 @@
               {% endfor %}
             </select>
           {% endif %}
-          {# preserve per_page when submitting the search form #}
+          {# Preserve sort state and per_page when submitting the search form #}
+          {% if sort %}<input type="hidden" name="sort" value="{{ sort }}">{% endif %}
+          {% if sort_dir and sort_dir != 'asc' %}<input type="hidden" name="dir" value="{{ sort_dir }}">{% endif %}
           {% if request.GET.per_page %}
             <input type="hidden" name="per_page" value="{{ request.GET.per_page }}">
           {% endif %}
@@ -46,22 +48,69 @@
       {% include 'inc/paginator.html' with paginator=paginator page=page_obj placement='top' %}
 
       {# --- table or empty state --- #}
-      {% if page_obj.object_list %}
+      {% if page_rows %}
         <div class="table-responsive">
           <table class="table table-hover attr-table mb-0">
             <thead>
               <tr>
-                <th>{% trans "Type" %}</th>
-                <th>{% trans "Object" %}</th>
-                <th>{% trans "Field" %}</th>
+                <th>
+                  <a href="{{ sort_headers.type.url }}">
+                    {% trans "Type" %}
+                    {% if sort_headers.type.icon %}<i class="mdi mdi-{{ sort_headers.type.icon }}"></i>{% endif %}
+                  </a>
+                </th>
+                <th>
+                  <a href="{{ sort_headers.object.url }}">
+                    {% trans "Object" %}
+                    {% if sort_headers.object.icon %}<i class="mdi mdi-{{ sort_headers.object.icon }}"></i>{% endif %}
+                  </a>
+                </th>
+                <th>{% trans "Value" %}</th>
+                <th>
+                  <a href="{{ sort_headers.field.url }}">
+                    {% trans "Field" %}
+                    {% if sort_headers.field.icon %}<i class="mdi mdi-{{ sort_headers.field.icon }}"></i>{% endif %}
+                  </a>
+                </th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
-              {% for obj, field in page_obj.object_list %}
+              {% for obj, field, value in page_rows %}
                 <tr>
-                  <td>{{ field.custom_object_type }}</td>
+                  <td>
+                    {% if request.user|can_view:field.custom_object_type %}
+                      <a href="{{ field.custom_object_type.get_absolute_url }}">{{ field.custom_object_type }}</a>
+                    {% else %}
+                      {{ field.custom_object_type }}
+                    {% endif %}
+                  </td>
                   <td><a href="{{ obj.get_absolute_url }}">{{ obj }}</a></td>
+                  <td>
+                    {% if field.type == 'object' %}
+                      {% if value %}
+                        <a href="{{ value.get_absolute_url }}">{{ value }}</a>
+                      {% else %}
+                        &mdash;
+                      {% endif %}
+                    {% elif field.type == 'multiobject' %}
+                      {% if value %}
+                        {% for related_obj in value|slice:":3" %}
+                          <a href="{{ related_obj.get_absolute_url }}">{{ related_obj }}</a>{% if not forloop.last %}, {% endif %}
+                        {% endfor %}
+                        {% if value|length > 3 %}&hellip;{% endif %}
+                      {% else %}
+                        &mdash;
+                      {% endif %}
+                    {% else %}
+                      &mdash;
+                    {% endif %}
+                  </td>
                   <td>{{ field }}</td>
+                  <td class="text-end text-nowrap">
+                    {% if request.user|can_change:obj %}{% custom_object_edit_button obj %}{% endif %}
+                    {% if request.user|can_delete:obj %}{% custom_object_delete_button obj %}{% endif %}
+                  </td>
                 </tr>
               {% endfor %}
             </tbody>

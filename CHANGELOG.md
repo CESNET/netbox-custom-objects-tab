@@ -27,6 +27,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Third-party plugin model support** — any installed Django app (including NetBox
   plugins) can be listed in `models`; Django's app registry treats them identically to
   built-in apps.
-- Default configuration: `['dcim.*', 'ipam.*']`.
+- Default configuration: `['dcim.*', 'ipam.*', 'virtualization.*', 'tenancy.*', 'contacts.*']`.
 - Tab is hidden automatically (`hide_if_empty=True`) when no custom objects reference
   the viewed object.
+- **Configurable tab label and weight** — set `label` and `weight` in `PLUGINS_CONFIG`
+  to control the tab text and position (defaults: `'Custom Objects'`, `2000`).
+- **Column sorting** — clicking the **Type**, **Object**, or **Field** column headers
+  sorts the table in-memory; a second click toggles direction. Sort state is preserved
+  across filter submissions.
+- **Value column** — shows the actual field value on each Custom Object instance:
+  a link for OBJECT fields, or comma-separated links (truncated at 3) for MULTIOBJECT fields.
+- **Clickable Type column** — the Type column links to the Custom Object Type detail
+  page when the user has `view` permission; otherwise renders as plain text.
+- **Permission-gated action buttons** — each row has an Edit button (requires `change`
+  permission) and a Delete button (requires `delete` permission). Users without either
+  permission see no action buttons.

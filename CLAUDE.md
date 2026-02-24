@@ -89,6 +89,25 @@ models work with the same syntax:
 
 Verified working with `inventory_monitor` and other third-party NetBox plugins.
 
+## Permission Checks in Template
+
+Action buttons and column links use the `perms` templatetag from `utilities.templatetags.perms`:
+
+```django
+{% load perms %}
+{% if request.user|can_change:obj %}{% custom_object_edit_button obj %}{% endif %}
+{% if request.user|can_delete:obj %}{% custom_object_delete_button obj %}{% endif %}
+{% if request.user|can_view:field.custom_object_type %}<a href="...">...{% endif %}
+```
+
+- `can_change`, `can_delete`, `can_view` are template filters that take the user as the
+  left-hand value and the object instance as the argument.
+- `custom_object_edit_button` and `custom_object_delete_button` are inclusion tags from
+  `netbox_custom_objects/templatetags/custom_object_buttons.py`; they render
+  `buttons/edit.html` and `buttons/custom_objects_delete.html` respectively.
+- Do **not** add bulk-edit or bulk-delete buttons to this tab — the tab shows objects
+  from multiple different Custom Object Types, so bulk editing across types is meaningless.
+
 ## Gotchas
 
 - `register_model_view` must run inside `AppConfig.ready()` — not at module level
@@ -123,6 +142,8 @@ Verified working with `inventory_monitor` and other third-party NetBox plugins.
 - [x] 13. Add wildcard model registration (`dcim.*`, `ipam.*`)
 - [x] 14. Add pagination (`EnhancedPaginator`) and `?q=` text search
 - [x] 15. Verify badge COUNT vs full fetch split (COUNT-only on detail page; full fetch only on tab)
+- [x] 16. Add permission-gated Edit button (`can_change`) and Delete button (`can_delete`) per row
+- [x] 17. Link the Type column to the CustomObjectType detail page (`can_view`-gated)
 
 ## Critical Reference Files
 
@@ -142,8 +163,13 @@ Verified working with `inventory_monitor` and other third-party NetBox plugins.
 3. In NetBox UI: Customization → Custom Object Types → create a type with a Device field
 4. Create a Custom Object instance that references an existing Device
 5. Navigate to that Device's detail page — "Custom Objects" tab appears (badge = 1)
-6. Click tab — table shows: type name | object link | field name
+6. Click tab — table shows: type name | object link | value | field name | actions
 7. Paginator appears when results exceed the per-page threshold
 8. Type a search term — table filters; badge count stays at total
-9. Delete the custom object — tab disappears
-10. Check logs: `journalctl -u netbox` for any import errors
+9. As a superuser: Edit and Delete buttons appear; Type column is a clickable link
+10. As a read-only user: no action buttons; Type column is a link if user has `view_customobjecttype`, plain text otherwise
+11. Click Edit → navigates to the Custom Object instance edit page
+12. Click Delete → navigates to the delete confirmation page
+13. Click the Type column link → navigates to the Custom Object Type detail page
+14. Delete the custom object — tab disappears
+15. Check logs: `journalctl -u netbox` for any import errors

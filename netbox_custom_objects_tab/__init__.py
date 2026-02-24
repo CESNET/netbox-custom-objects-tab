@@ -16,7 +16,14 @@ class NetBoxCustomObjectsTabConfig(PluginConfig):
         'models': [
             'dcim.*',
             'ipam.*',
-        ]
+            'virtualization.*',
+            'tenancy.*',
+            'contacts.*',
+        ],
+        # Label shown on the tab; override in PLUGINS_CONFIG.
+        'label': 'Custom Objects',
+        # Tab sort weight; lower values appear further left.
+        'weight': 2000,
     }
 
     def ready(self):

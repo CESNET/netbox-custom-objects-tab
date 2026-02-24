@@ -1,4 +1,5 @@
 import logging
+from urllib.parse import urlencode
 
 from django.apps import apps
 from django.contrib.contenttypes.models import ContentType
@@ -12,6 +13,10 @@ from utilities.paginator import EnhancedPaginator, get_paginate_count
 from utilities.views import ViewTab, register_model_view
 
 logger = logging.getLogger('netbox_custom_objects_tab')
+
+# Maximum number of related objects to show in the Value column for MULTIOBJECT fields.
+# One extra is fetched to detect truncation without a COUNT query.
+_MAX_MULTIOBJECT_DISPLAY = 3
 
 
 def _get_linked_custom_objects(instance):
@@ -106,7 +111,54 @@ def _filter_linked_objects(linked, q):
     ]
 
 
-def _make_tab_view(model_class):
+def _get_field_value(obj, field):
+    """
+    Return the value stored in `field` on `obj`, for display in the Value column.
+
+    TYPE_OBJECT     → the related model instance (or None if unset)
+    TYPE_MULTIOBJECT → list of related instances, up to _MAX_MULTIOBJECT_DISPLAY+1
+                       (the extra item lets the template detect truncation without a
+                       separate COUNT query)
+    """
+    if field.type == CustomFieldTypeChoices.TYPE_OBJECT:
+        return getattr(obj, field.name, None)
+    elif field.type == CustomFieldTypeChoices.TYPE_MULTIOBJECT:
+        qs = getattr(obj, field.name, None)
+        if qs is None:
+            return []
+        return list(qs.all()[:_MAX_MULTIOBJECT_DISPLAY + 1])
+    return None
+
+
+# Sort key lambdas keyed by the ?sort= query parameter value.
+_SORT_KEYS = {
+    'type': lambda t: str(t[1].custom_object_type).lower(),
+    'object': lambda t: str(t[0]).lower(),
+    'field': lambda t: str(t[1]).lower(),
+}
+
+
+def _sort_header(sort_base, col, current_sort, current_dir):
+    """
+    Build the URL and directional icon for a sortable column header.
+
+    Returns a dict with keys:
+      url  – the href value for the <a> tag
+      icon – MDI icon name (arrow-up / arrow-down) when this column is active,
+             or None when it is not the active sort column
+    """
+    if current_sort == col:
+        next_dir = 'desc' if current_dir == 'asc' else 'asc'
+        icon = 'arrow-up' if current_dir == 'asc' else 'arrow-down'
+    else:
+        next_dir = 'asc'
+        icon = None
+
+    qs = f'{sort_base}&sort={col}&dir={next_dir}' if sort_base else f'sort={col}&dir={next_dir}'
+    return {'url': f'?{qs}', 'icon': icon}
+
+
+def _make_tab_view(model_class, label='Custom Objects', weight=2000):
     """
     Factory that returns a unique View subclass for model_class.
     Each model needs its own class so that NetBox's view registry stores
@@ -115,9 +167,9 @@ def _make_tab_view(model_class):
 
     class _TabView(View):
         tab = ViewTab(
-            label='Custom Objects',
+            label=label,
             badge=_count_linked_custom_objects,
-            weight=2000,
+            weight=weight,
             hide_if_empty=True,
         )
 
@@ -140,10 +192,14 @@ def _make_tab_view(model_class):
                     available_types.append(cot)
             available_types.sort(key=lambda t: str(t))
 
-            # Apply filters
+            # Read filter/sort params
             q = request.GET.get('q', '')
             type_slug = request.GET.get('type', '')
+            sort_col = request.GET.get('sort', '')
+            sort_dir = request.GET.get('dir', 'asc')
+            per_page = request.GET.get('per_page', '')
 
+            # Apply filters
             linked = _filter_linked_objects(linked_all, q)
             if type_slug:
                 linked = [
@@ -151,12 +207,37 @@ def _make_tab_view(model_class):
                     if field.custom_object_type.slug == type_slug
                 ]
 
+            # In-memory sort (applied after filters, before pagination)
+            if sort_col in _SORT_KEYS:
+                linked.sort(key=_SORT_KEYS[sort_col], reverse=(sort_dir == 'desc'))
+
             # Pagination
             paginator = EnhancedPaginator(linked, get_paginate_count(request))
             try:
                 page = paginator.page(int(request.GET.get('page', 1)))
             except (InvalidPage, ValueError):
                 page = paginator.page(1)
+
+            # Resolve field values for just the current page (avoids N+1 on full list)
+            page_rows = [
+                (obj, field, _get_field_value(obj, field))
+                for obj, field in page.object_list
+            ]
+
+            # Build the base query string (without sort/dir) for column sort links
+            base_params = {}
+            if q:
+                base_params['q'] = q
+            if type_slug:
+                base_params['type'] = type_slug
+            if per_page:
+                base_params['per_page'] = per_page
+            sort_base = urlencode(base_params)
+
+            sort_headers = {
+                col: _sort_header(sort_base, col, sort_col, sort_dir)
+                for col in ('type', 'object', 'field')
+            }
 
             return render(
                 request,
@@ -171,9 +252,13 @@ def _make_tab_view(model_class):
                     ),
                     'page_obj': page,
                     'paginator': paginator,
+                    'page_rows': page_rows,
                     'q': q,
                     'type_slug': type_slug,
                     'available_types': available_types,
+                    'sort': sort_col,
+                    'sort_dir': sort_dir,
+                    'sort_headers': sort_headers,
                 },
             )
 
@@ -189,14 +274,16 @@ def register_tabs():
     """
     try:
         model_labels = get_plugin_config('netbox_custom_objects_tab', 'models')
+        tab_label = get_plugin_config('netbox_custom_objects_tab', 'label')
+        tab_weight = get_plugin_config('netbox_custom_objects_tab', 'weight')
     except Exception:
         logger.exception('Could not read netbox_custom_objects_tab plugin config')
         return
 
-    for label in model_labels:
-        label = label.lower()
-        if label.endswith('.*'):
-            app_label = label[:-2]
+    for model_label in model_labels:
+        model_label = model_label.lower()
+        if model_label.endswith('.*'):
+            app_label = model_label[:-2]
             try:
                 model_classes = list(apps.get_app_config(app_label).get_models())
             except LookupError:
@@ -207,19 +294,19 @@ def register_tabs():
                 continue
         else:
             try:
-                app_label, model_name = label.split('.', 1)
+                app_label, model_name = model_label.split('.', 1)
                 model_classes = [apps.get_model(app_label, model_name)]
             except (ValueError, LookupError):
                 logger.warning(
                     'netbox_custom_objects_tab: could not find model %r — skipping',
-                    label,
+                    model_label,
                 )
                 continue
 
         for model_class in model_classes:
             app_label = model_class._meta.app_label
             model_name = model_class._meta.model_name
-            view_class = _make_tab_view(model_class)
+            view_class = _make_tab_view(model_class, label=tab_label, weight=tab_weight)
             # Programmatic equivalent of:
             #   @register_model_view(model_class, name='custom_objects', path='custom-objects')
             register_model_view(
