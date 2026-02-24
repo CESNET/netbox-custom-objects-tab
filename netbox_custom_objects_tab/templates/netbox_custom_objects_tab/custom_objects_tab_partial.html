@@ -1,4 +1,4 @@
-{% load i18n custom_object_buttons perms %}
+{% load i18n perms %}
 
 <div id="custom_objects_list" class="htmx-container">
 
@@ -66,8 +66,16 @@
               </td>
               <td>{{ field }}</td>
               <td class="text-end text-nowrap">
-                {% if request.user|can_change:obj %}{% custom_object_edit_button obj %}{% endif %}
-                {% if request.user|can_delete:obj %}{% custom_object_delete_button obj %}{% endif %}
+                {% if request.user|can_change:obj %}
+                <a href="{% url 'plugins:netbox_custom_objects:customobject_edit' pk=obj.pk custom_object_type=obj.custom_object_type.slug %}?return_url={{ return_url|urlencode }}" class="btn btn-yellow" role="button">
+                  <i class="mdi mdi-pencil" aria-hidden="true"></i> Edit
+                </a>
+                {% endif %}
+                {% if request.user|can_delete:obj %}
+                <a href="{% url 'plugins:netbox_custom_objects:customobject_delete' pk=obj.pk custom_object_type=obj.custom_object_type.slug %}?return_url={{ return_url|urlencode }}" class="btn btn-red" role="button">
+                  <i class="mdi mdi-trash-can-outline" aria-hidden="true"></i> Delete
+                </a>
+                {% endif %}
               </td>
             </tr>
           {% endfor %}

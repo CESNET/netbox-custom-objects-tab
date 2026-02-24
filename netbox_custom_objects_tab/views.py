@@ -259,6 +259,7 @@ def _make_tab_view(model_class, label='Custom Objects', weight=2000):
                 'sort_dir': sort_dir,
                 'sort_headers': sort_headers,
                 'htmx_table': SimpleNamespace(htmx_url=request.path, embedded=False),
+                'return_url': request.path,
             }
 
             if htmx_partial(request):
