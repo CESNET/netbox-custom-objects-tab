@@ -10,7 +10,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -110,7 +109,6 @@ class TestCountLinkedCustomObjects:
 
         fields_and_counts: list of (field_type_value, count_int)
         """
-        from extras.choices import CustomFieldTypeChoices
 
         mock_fields = []
         for field_type, count in fields_and_counts:
