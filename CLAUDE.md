@@ -102,16 +102,22 @@ Action buttons and column links use the `perms` templatetag from `utilities.temp
 
 ```django
 {% load perms %}
-{% if request.user|can_change:obj %}{% custom_object_edit_button obj %}{% endif %}
-{% if request.user|can_delete:obj %}{% custom_object_delete_button obj %}{% endif %}
+{% if request.user|can_change:obj %}
+<a href="{% url 'plugins:netbox_custom_objects:customobject_edit' pk=obj.pk custom_object_type=obj.custom_object_type.slug %}?return_url={{ return_url|urlencode }}" class="btn btn-yellow" role="button">...</a>
+{% endif %}
+{% if request.user|can_delete:obj %}
+<a href="{% url 'plugins:netbox_custom_objects:customobject_delete' pk=obj.pk custom_object_type=obj.custom_object_type.slug %}?return_url={{ return_url|urlencode }}" class="btn btn-red" role="button">...</a>
+{% endif %}
 {% if request.user|can_view:field.custom_object_type %}<a href="...">...{% endif %}
 ```
 
 - `can_change`, `can_delete`, `can_view` are template filters that take the user as the
   left-hand value and the object instance as the argument.
-- `custom_object_edit_button` and `custom_object_delete_button` are inclusion tags from
-  `netbox_custom_objects/templatetags/custom_object_buttons.py`; they render
-  `buttons/edit.html` and `buttons/custom_objects_delete.html` respectively.
+- Edit and Delete are rendered as **inline `<a>` buttons** (not inclusion tags) so that
+  `?return_url={{ return_url|urlencode }}` can be appended. `return_url` is set in the
+  view context as `request.path` (the tab URL, e.g. `/dcim/devices/42/custom-objects/`).
+- The `custom_object_edit_button` / `custom_object_delete_button` inclusion tags from
+  `netbox_custom_objects` do **not** accept a `return_url` argument — do not use them.
 - Do **not** add bulk-edit or bulk-delete buttons to this tab — the tab shows objects
   from multiple different Custom Object Types, so bulk editing across types is meaningless.
 
@@ -134,6 +140,11 @@ Action buttons and column links use the `perms` templatetag from `utilities.temp
   returns the partial when `htmx_partial(request)` is True.
 - The search form uses `hx-get` (no `method="get"`). The type select uses `hx-include="closest
   form"` to pull in sibling fields (q, sort, dir, per_page) when it fires on change.
+- `CustomObjectDeleteView.get_return_url()` overrides the mixin and ignores request params.
+  However, `ObjectDeleteView.post()` checks `form.cleaned_data['return_url']` **before**
+  calling `get_return_url()`, so passing `?return_url=` in the delete button URL still works
+  — NetBox initialises the delete confirmation form's hidden `return_url` field from the
+  GET param, which is then submitted with the form.
 
 ## TODO — Step-by-step Implementation Checklist
 
@@ -157,6 +168,7 @@ Action buttons and column links use the `perms` templatetag from `utilities.temp
 - [x] 16. Add permission-gated Edit button (`can_change`) and Delete button (`can_delete`) per row
 - [x] 17. Link the Type column to the CustomObjectType detail page (`can_view`-gated)
 - [x] 18. Add HTMX partial rendering (paginator, sort headers, search form, type dropdown)
+- [x] 19. Fix Edit/Delete return URL to redirect back to the Custom Objects tab
 
 ## Critical Reference Files
 
@@ -185,8 +197,8 @@ Action buttons and column links use the `perms` templatetag from `utilities.temp
 8d. Network tab in devtools: HTMX requests carry `HX-Request: true`; response has no `<html>` tag
 9. As a superuser: Edit and Delete buttons appear; Type column is a clickable link
 10. As a read-only user: no action buttons; Type column is a link if user has `view_customobjecttype`, plain text otherwise
-11. Click Edit → navigates to the Custom Object instance edit page
-12. Click Delete → navigates to the delete confirmation page
+11. Click Edit → navigates to the Custom Object instance edit page; save → returns to the tab
+12. Click Delete → navigates to the delete confirmation page; confirm → returns to the tab
 13. Click the Type column link → navigates to the Custom Object Type detail page
 14. Delete the custom object — tab disappears
 15. Check logs: `journalctl -u netbox` for any import errors

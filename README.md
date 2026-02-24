@@ -125,7 +125,8 @@ Each row has right-aligned action buttons, shown only when the user has the rele
 - **Edit** (pencil icon) — links to the Custom Object instance's edit page. Shown when the user has `change` permission on the object.
 - **Delete** (trash icon) — links to the Custom Object instance's delete confirmation page. Shown when the user has `delete` permission on the object.
 
-Users without either permission see no action buttons in the row.
+Users without either permission see no action buttons in the row. After completing either
+action, NetBox redirects back to the Custom Objects tab on the same parent object.
 
 ### Efficient badge counts
 The tab badge (shown in the tab bar on every detail page) is computed with a

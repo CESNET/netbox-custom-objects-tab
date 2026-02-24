@@ -46,3 +46,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   type-dropdown changes now swap only the table zone in-place, without a full page reload.
   The URL is updated via `pushState` so links remain shareable and the browser back button
   restores the previous filter/page state.
+
+### Fixed
+
+- **Edit/Delete return URL** — after saving an edit or confirming a deletion, NetBox now
+  redirects back to the Custom Objects tab instead of to the Custom Object list page.
