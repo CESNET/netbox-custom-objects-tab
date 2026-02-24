@@ -6,10 +6,14 @@
   <div class="col-12">
     <div class="card">
 
-      {# --- header with search form --- #}
+      {# --- header with search form (never swapped by HTMX) --- #}
       <div class="card-header d-flex justify-content-between align-items-center">
         <h2 class="mb-0">{% trans "Custom Objects" %}</h2>
-        <form method="get" class="d-flex flex-wrap align-items-center gap-2">
+        <form hx-get="{{ request.path }}"
+              hx-target="#custom_objects_list"
+              hx-swap="outerHTML"
+              hx-push-url="true"
+              class="d-flex flex-wrap align-items-center gap-2">
           <div class="input-group input-group-sm">
             <input type="text" name="q" value="{{ q }}"
                    class="form-control" placeholder="{% trans 'Search...' %}"
@@ -25,8 +29,15 @@
           </div>
           {# Type dropdown — only shown when there are 2+ types #}
           {% if available_types|length > 1 %}
-            <select name="type" class="form-select form-select-sm w-auto"
-                    onchange="this.form.submit()" aria-label="{% trans 'Filter by type' %}">
+            <select name="type"
+                    hx-get="{{ request.path }}"
+                    hx-target="#custom_objects_list"
+                    hx-swap="outerHTML"
+                    hx-push-url="true"
+                    hx-include="closest form"
+                    hx-trigger="change"
+                    class="form-select form-select-sm w-auto"
+                    aria-label="{% trans 'Filter by type' %}">
               <option value="">{% trans "All types" %}</option>
               {% for cot in available_types %}
                 <option value="{{ cot.slug }}"{% if cot.slug == type_slug %} selected{% endif %}>
@@ -44,90 +55,8 @@
         </form>
       </div>
 
-      {# --- top paginator --- #}
-      {% include 'inc/paginator.html' with paginator=paginator page=page_obj placement='top' %}
-
-      {# --- table or empty state --- #}
-      {% if page_rows %}
-        <div class="table-responsive">
-          <table class="table table-hover attr-table mb-0">
-            <thead>
-              <tr>
-                <th>
-                  <a href="{{ sort_headers.type.url }}">
-                    {% trans "Type" %}
-                    {% if sort_headers.type.icon %}<i class="mdi mdi-{{ sort_headers.type.icon }}"></i>{% endif %}
-                  </a>
-                </th>
-                <th>
-                  <a href="{{ sort_headers.object.url }}">
-                    {% trans "Object" %}
-                    {% if sort_headers.object.icon %}<i class="mdi mdi-{{ sort_headers.object.icon }}"></i>{% endif %}
-                  </a>
-                </th>
-                <th>{% trans "Value" %}</th>
-                <th>
-                  <a href="{{ sort_headers.field.url }}">
-                    {% trans "Field" %}
-                    {% if sort_headers.field.icon %}<i class="mdi mdi-{{ sort_headers.field.icon }}"></i>{% endif %}
-                  </a>
-                </th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for obj, field, value in page_rows %}
-                <tr>
-                  <td>
-                    {% if request.user|can_view:field.custom_object_type %}
-                      <a href="{{ field.custom_object_type.get_absolute_url }}">{{ field.custom_object_type }}</a>
-                    {% else %}
-                      {{ field.custom_object_type }}
-                    {% endif %}
-                  </td>
-                  <td><a href="{{ obj.get_absolute_url }}">{{ obj }}</a></td>
-                  <td>
-                    {% if field.type == 'object' %}
-                      {% if value %}
-                        <a href="{{ value.get_absolute_url }}">{{ value }}</a>
-                      {% else %}
-                        &mdash;
-                      {% endif %}
-                    {% elif field.type == 'multiobject' %}
-                      {% if value %}
-                        {% for related_obj in value|slice:":3" %}
-                          <a href="{{ related_obj.get_absolute_url }}">{{ related_obj }}</a>{% if not forloop.last %}, {% endif %}
-                        {% endfor %}
-                        {% if value|length > 3 %}&hellip;{% endif %}
-                      {% else %}
-                        &mdash;
-                      {% endif %}
-                    {% else %}
-                      &mdash;
-                    {% endif %}
-                  </td>
-                  <td>{{ field }}</td>
-                  <td class="text-end text-nowrap">
-                    {% if request.user|can_change:obj %}{% custom_object_edit_button obj %}{% endif %}
-                    {% if request.user|can_delete:obj %}{% custom_object_delete_button obj %}{% endif %}
-                  </td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      {% else %}
-        <div class="card-body text-muted">
-          {% if q or type_slug %}
-            {% trans "No custom objects match your filters." %}
-          {% else %}
-            {% trans "No custom objects are linked to this object." %}
-          {% endif %}
-        </div>
-      {% endif %}
-
-      {# --- bottom paginator --- #}
-      {% include 'inc/paginator.html' with paginator=paginator page=page_obj placement='bottom' %}
+      {# --- table zone (swapped by HTMX) --- #}
+      {% include 'netbox_custom_objects_tab/custom_objects_tab_partial.html' %}
 
     </div>
   </div>

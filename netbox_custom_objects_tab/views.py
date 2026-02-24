@@ -1,4 +1,5 @@
 import logging
+from types import SimpleNamespace
 from urllib.parse import urlencode
 
 from django.apps import apps
@@ -9,6 +10,7 @@ from django.views.generic import View
 
 from extras.choices import CustomFieldTypeChoices
 from netbox.plugins import get_plugin_config
+from utilities.htmx import htmx_partial
 from utilities.paginator import EnhancedPaginator, get_paginate_count
 from utilities.views import ViewTab, register_model_view
 
@@ -239,27 +241,36 @@ def _make_tab_view(model_class, label='Custom Objects', weight=2000):
                 for col in ('type', 'object', 'field')
             }
 
+            context = {
+                'object': instance,
+                'tab': self.tab,
+                # base_template must match the parent model's detail template
+                # so that tabs, breadcrumbs, and the page header render correctly.
+                'base_template': (
+                    f'{instance._meta.app_label}/{instance._meta.model_name}.html'
+                ),
+                'page_obj': page,
+                'paginator': paginator,
+                'page_rows': page_rows,
+                'q': q,
+                'type_slug': type_slug,
+                'available_types': available_types,
+                'sort': sort_col,
+                'sort_dir': sort_dir,
+                'sort_headers': sort_headers,
+                'htmx_table': SimpleNamespace(htmx_url=request.path, embedded=False),
+            }
+
+            if htmx_partial(request):
+                return render(
+                    request,
+                    'netbox_custom_objects_tab/custom_objects_tab_partial.html',
+                    context,
+                )
             return render(
                 request,
                 'netbox_custom_objects_tab/custom_objects_tab.html',
-                {
-                    'object': instance,
-                    'tab': self.tab,
-                    # base_template must match the parent model's detail template
-                    # so that tabs, breadcrumbs, and the page header render correctly.
-                    'base_template': (
-                        f'{instance._meta.app_label}/{instance._meta.model_name}.html'
-                    ),
-                    'page_obj': page,
-                    'paginator': paginator,
-                    'page_rows': page_rows,
-                    'q': q,
-                    'type_slug': type_slug,
-                    'available_types': available_types,
-                    'sort': sort_col,
-                    'sort_dir': sort_dir,
-                    'sort_headers': sort_headers,
-                },
+                context,
             )
 
     _TabView.__name__ = f'{model_class.__name__}CustomObjectsTabView'

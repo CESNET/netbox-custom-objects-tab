@@ -1,0 +1,90 @@
+{% load i18n custom_object_buttons perms %}
+
+<div id="custom_objects_list" class="htmx-container">
+
+  {# --- top paginator --- #}
+  {% include 'inc/paginator.html' with paginator=paginator page=page_obj placement='top' htmx=True table=htmx_table %}
+
+  {# --- table or empty state --- #}
+  {% if page_rows %}
+    <div class="table-responsive">
+      <table class="table table-hover attr-table mb-0">
+        <thead hx-target="#custom_objects_list" hx-swap="outerHTML" hx-push-url="true">
+          <tr>
+            <th>
+              <a hx-get="{{ sort_headers.type.url }}">
+                {% trans "Type" %}
+                {% if sort_headers.type.icon %}<i class="mdi mdi-{{ sort_headers.type.icon }}"></i>{% endif %}
+              </a>
+            </th>
+            <th>
+              <a hx-get="{{ sort_headers.object.url }}">
+                {% trans "Object" %}
+                {% if sort_headers.object.icon %}<i class="mdi mdi-{{ sort_headers.object.icon }}"></i>{% endif %}
+              </a>
+            </th>
+            <th>{% trans "Value" %}</th>
+            <th>
+              <a hx-get="{{ sort_headers.field.url }}">
+                {% trans "Field" %}
+                {% if sort_headers.field.icon %}<i class="mdi mdi-{{ sort_headers.field.icon }}"></i>{% endif %}
+              </a>
+            </th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for obj, field, value in page_rows %}
+            <tr>
+              <td>
+                {% if request.user|can_view:field.custom_object_type %}
+                  <a href="{{ field.custom_object_type.get_absolute_url }}">{{ field.custom_object_type }}</a>
+                {% else %}
+                  {{ field.custom_object_type }}
+                {% endif %}
+              </td>
+              <td><a href="{{ obj.get_absolute_url }}">{{ obj }}</a></td>
+              <td>
+                {% if field.type == 'object' %}
+                  {% if value %}
+                    <a href="{{ value.get_absolute_url }}">{{ value }}</a>
+                  {% else %}
+                    &mdash;
+                  {% endif %}
+                {% elif field.type == 'multiobject' %}
+                  {% if value %}
+                    {% for related_obj in value|slice:":3" %}
+                      <a href="{{ related_obj.get_absolute_url }}">{{ related_obj }}</a>{% if not forloop.last %}, {% endif %}
+                    {% endfor %}
+                    {% if value|length > 3 %}&hellip;{% endif %}
+                  {% else %}
+                    &mdash;
+                  {% endif %}
+                {% else %}
+                  &mdash;
+                {% endif %}
+              </td>
+              <td>{{ field }}</td>
+              <td class="text-end text-nowrap">
+                {% if request.user|can_change:obj %}{% custom_object_edit_button obj %}{% endif %}
+                {% if request.user|can_delete:obj %}{% custom_object_delete_button obj %}{% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="card-body text-muted">
+      {% if q or type_slug %}
+        {% trans "No custom objects match your filters." %}
+      {% else %}
+        {% trans "No custom objects are linked to this object." %}
+      {% endif %}
+    </div>
+  {% endif %}
+
+  {# --- bottom paginator --- #}
+  {% include 'inc/paginator.html' with paginator=paginator page=page_obj placement='bottom' htmx=True table=htmx_table %}
+
+</div>
