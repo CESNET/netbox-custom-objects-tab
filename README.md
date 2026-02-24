@@ -12,6 +12,12 @@ of custom objects are linked.
 - NetBox 4.5.0 – 4.5.99
 - `netbox_custom_objects` plugin installed and configured
 
+## Compatibility
+
+| Plugin version | NetBox version |
+|----------------|----------------|
+| 1.0.x          | 4.5.x          |
+
 ## Installation
 
 ```bash
@@ -99,6 +105,14 @@ The tab displays:
 | **Type** | Custom Object Type name |
 | **Object** | Link to the Custom Object instance |
 | **Field** | The field that holds the reference |
+
+## Support
+
+- Open an issue on [GitHub](https://github.com/CESNET/netbox-custom-objects-tab/issues)
+
+## Contributing
+
+Pull requests are welcome. For significant changes, please open an issue first.
 
 ## License
 

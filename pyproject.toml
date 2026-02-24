@@ -8,13 +8,33 @@ version = "1.0.0"
 description = "NetBox plugin that adds a Custom Objects tab to object detail pages"
 readme = "README.md"
 requires-python = ">=3.12"
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [
+    {name = "Jan Krupa", email = "jan.krupa@cesnet.cz"},
+]
 keywords = ["netbox", "plugin", "custom-objects"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Framework :: Django",
+    "Topic :: System :: Networking",
+    "Intended Audience :: System Administrators",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+]
 dependencies = []
 
+[project.optional-dependencies]
+dev = ["pytest", "pytest-django"]
+
 [project.urls]
-Repository = "https://github.com/your-org/netbox-custom-objects-tab"
+Homepage = "https://github.com/CESNET/netbox-custom-objects-tab"
+Issues = "https://github.com/CESNET/netbox-custom-objects-tab/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["netbox_custom_objects_tab*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+DJANGO_SETTINGS_MODULE = "tests.settings"
