@@ -1,0 +1,7 @@
+line-length = 120
+
+[lint]
+select = ["E", "F", "W", "I"]
+
+[lint.isort]
+known-third-party = ["extras", "netbox", "utilities", "netbox_custom_objects"]

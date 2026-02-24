@@ -4,6 +4,24 @@
 
 - **Never** add `Co-Authored-By: Claude` (or any Claude/Anthropic credit) to commit messages.
 
+## Linting & Formatting
+
+[ruff](https://docs.astral.sh/ruff/) is the project linter and formatter.
+Configuration lives in `ruff.toml` (line-length = 120, ruleset E/F/W/I).
+
+```bash
+# Install dev dependencies (includes ruff)
+pip install -e ".[dev]"
+
+# Check
+ruff check netbox_custom_objects_tab/
+
+# Format
+ruff format netbox_custom_objects_tab/
+```
+
+Always run both before committing Python changes.
+
 ## Purpose
 
 Adds a **"Custom Objects"** tab to NetBox object detail pages (Device, Site, Rack, etc.),

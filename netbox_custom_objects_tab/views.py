@@ -9,7 +9,6 @@ from django.core.paginator import InvalidPage
 from django.shortcuts import get_object_or_404, render
 from django.utils.translation import gettext_lazy as _
 from django.views.generic import View
-
 from extras.choices import CustomFieldTypeChoices
 from netbox.plugins import get_plugin_config
 from netbox.tables import BaseTable
