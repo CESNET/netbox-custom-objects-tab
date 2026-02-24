@@ -58,6 +58,11 @@ from netbox.plugins import get_plugin_config
   and `page=page_obj` (do NOT pass `htmx=True` — we use plain GET links, not HTMX).
 - Badge count (`_count_linked_custom_objects`) still counts the **unfiltered** total so the
   badge reflects all linked objects regardless of active search.
+- **`_count_linked_custom_objects`** uses `.count()` (DB-side `COUNT(*)`) per field —
+  no object rows are fetched. Full rows are loaded only when the tab view itself is
+  called (`_get_linked_custom_objects`). Verified empirically: on a Device with 2214
+  linked custom objects, the detail page (`/dcim/devices/<pk>/`) runs only COUNT queries;
+  the full fetch fires only on `/dcim/devices/<pk>/custom-objects/`.
 
 ## Model Registration
 
@@ -103,6 +108,7 @@ Default: `['dcim.*', 'ipam.*']`
           Device detail page with badge count = 1
 - [x] 13. Add wildcard model registration (`dcim.*`, `ipam.*`)
 - [x] 14. Add pagination (`EnhancedPaginator`) and `?q=` text search
+- [x] 15. Verify badge COUNT vs full fetch split (COUNT-only on detail page; full fetch only on tab)
 
 ## Critical Reference Files
 

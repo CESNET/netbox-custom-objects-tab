@@ -9,7 +9,7 @@
       {# --- header with search form --- #}
       <div class="card-header d-flex justify-content-between align-items-center">
         <h2 class="mb-0">{% trans "Custom Objects" %}</h2>
-        <form method="get" class="d-flex align-items-center gap-2">
+        <form method="get" class="d-flex flex-wrap align-items-center gap-2">
           <div class="input-group input-group-sm">
             <input type="text" name="q" value="{{ q }}"
                    class="form-control" placeholder="{% trans 'Search...' %}"
@@ -17,12 +17,24 @@
             <button type="submit" class="btn btn-primary">
               <i class="mdi mdi-magnify"></i>
             </button>
-            {% if q %}
-              <a href="?" class="btn btn-outline-secondary" title="{% trans 'Clear search' %}">
+            {% if q or type_slug %}
+              <a href="?" class="btn btn-outline-secondary" title="{% trans 'Clear filters' %}">
                 <i class="mdi mdi-close"></i>
               </a>
             {% endif %}
           </div>
+          {# Type dropdown — only shown when there are 2+ types #}
+          {% if available_types|length > 1 %}
+            <select name="type" class="form-select form-select-sm w-auto"
+                    onchange="this.form.submit()" aria-label="{% trans 'Filter by type' %}">
+              <option value="">{% trans "All types" %}</option>
+              {% for cot in available_types %}
+                <option value="{{ cot.slug }}"{% if cot.slug == type_slug %} selected{% endif %}>
+                  {{ cot }}
+                </option>
+              {% endfor %}
+            </select>
+          {% endif %}
           {# preserve per_page when submitting the search form #}
           {% if request.GET.per_page %}
             <input type="hidden" name="per_page" value="{{ request.GET.per_page }}">
@@ -57,8 +69,8 @@
         </div>
       {% else %}
         <div class="card-body text-muted">
-          {% if q %}
-            {% trans "No custom objects match your search." %}
+          {% if q or type_slug %}
+            {% trans "No custom objects match your filters." %}
           {% else %}
             {% trans "No custom objects are linked to this object." %}
           {% endif %}

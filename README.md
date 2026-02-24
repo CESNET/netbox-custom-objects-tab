@@ -74,6 +74,12 @@ A search box in the card header filters results by:
 
 Filtering uses the `?q=` query parameter and is applied before pagination.
 
+### Efficient badge counts
+The tab badge (shown in the tab bar on every detail page) is computed with a
+`COUNT(*)` query per field — no object rows are fetched. Full object rows are only
+loaded when the tab itself is opened. This keeps detail page loads fast even when
+thousands of custom objects reference an object.
+
 ## How It Works
 
 When a Custom Object Type has a field of type **Object** or **Multi-Object** pointing to
