@@ -115,7 +115,9 @@ Action buttons and column links use the `perms` templatetag from `utilities.temp
   left-hand value and the object instance as the argument.
 - Edit and Delete are rendered as **inline `<a>` buttons** (not inclusion tags) so that
   `?return_url={{ return_url|urlencode }}` can be appended. `return_url` is set in the
-  view context as `request.path` (the tab URL, e.g. `/dcim/devices/42/custom-objects/`).
+  view context as `request.get_full_path()` (path + query string, e.g.
+  `/dcim/devices/42/custom-objects/?q=foo&sort=type&dir=asc`), so active filters are
+  preserved when the user returns from Edit or Delete.
 - The `custom_object_edit_button` / `custom_object_delete_button` inclusion tags from
   `netbox_custom_objects` do **not** accept a `return_url` argument — do not use them.
 - Do **not** add bulk-edit or bulk-delete buttons to this tab — the tab shows objects

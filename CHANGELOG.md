@@ -51,3 +51,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Edit/Delete return URL** — after saving an edit or confirming a deletion, NetBox now
   redirects back to the Custom Objects tab instead of to the Custom Object list page.
+- **Filter state preserved on return** — active filters (`?q=`, `?type=`, `?sort=`, `?dir=`,
+  `?per_page=`, `?page=`) are retained in the return URL so the user lands back on the same
+  filtered/sorted view after editing or deleting a custom object.
