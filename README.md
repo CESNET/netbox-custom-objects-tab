@@ -54,7 +54,13 @@ Restart NetBox. No database migrations required.
 
 # Mix wildcards and specifics
 'models': ['dcim.*', 'virtualization.*', 'ipam.ipaddress']
+
+# Third-party plugin models work identically
+'models': ['dcim.*', 'ipam.*', 'inventory_monitor.*']
 ```
+
+Third-party plugin models are fully supported — Django treats plugin apps and built-in apps
+the same way in the app registry. Add the plugin's app label and restart NetBox once.
 
 The tab is hidden automatically (`hide_if_empty=True`) when no custom objects reference
 the object being viewed, so it only appears when relevant.

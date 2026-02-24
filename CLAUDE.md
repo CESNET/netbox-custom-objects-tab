@@ -75,6 +75,16 @@ from netbox.plugins import get_plugin_config
 
 Default: `['dcim.*', 'ipam.*']`
 
+**Third-party plugin models are fully supported.** Django's `apps.get_app_config()` and
+`apps.get_model()` treat plugin apps identically to built-in apps, so any installed plugin's
+models work with the same syntax:
+
+```python
+'models': ['dcim.*', 'ipam.*', 'inventory_monitor.*']
+```
+
+Verified working with `inventory_monitor` and other third-party NetBox plugins.
+
 ## Gotchas
 
 - `register_model_view` must run inside `AppConfig.ready()` — not at module level
