@@ -111,7 +111,7 @@ from types import SimpleNamespace
 | `dcim.device` | Registers the tab for that single model |
 | `dcim.*` | Registers the tab for **every model** in the `dcim` app |
 
-Default: `['dcim.*', 'ipam.*']`
+Default: `['dcim.*', 'ipam.*', 'virtualization.*', 'tenancy.*', 'contacts.*']`
 
 **Third-party plugin models are fully supported.** Django's `apps.get_app_config()` and
 `apps.get_model()` treat plugin apps identically to built-in apps, so any installed plugin's
