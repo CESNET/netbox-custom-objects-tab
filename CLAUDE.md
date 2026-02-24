@@ -22,7 +22,8 @@ so it stays usable with large numbers of linked objects.
 | `netbox_custom_objects_tab/__init__.py` | `PluginConfig`; calls `views.register_tabs()` in `ready()` |
 | `netbox_custom_objects_tab/views.py` | View factory + `register_tabs()` using `register_model_view` + `ViewTab` |
 | `netbox_custom_objects_tab/urls.py` | Empty `urlpatterns` (required by NetBox plugin loader) |
-| `netbox_custom_objects_tab/templates/netbox_custom_objects_tab/custom_objects_tab.html` | Tab content template |
+| `netbox_custom_objects_tab/templates/netbox_custom_objects_tab/custom_objects_tab.html` | Tab content template (full page, extends base_template) |
+| `netbox_custom_objects_tab/templates/netbox_custom_objects_tab/custom_objects_tab_partial.html` | Swappable HTMX zone — returned for HTMX partial requests; no `{% extends %}` |
 
 ## How Custom Objects Link to NetBox Objects
 
@@ -48,6 +49,8 @@ from utilities.paginator import EnhancedPaginator, get_paginate_count
 from netbox_custom_objects.models import CustomObjectTypeField
 from extras.choices import CustomFieldTypeChoices
 from netbox.plugins import get_plugin_config
+from utilities.htmx import htmx_partial
+from types import SimpleNamespace
 ```
 
 ## Pagination & Filtering Design
@@ -58,8 +61,12 @@ from netbox.plugins import get_plugin_config
   match against `str(obj)`, `str(field.custom_object_type)`, `str(field)`.
 - **`EnhancedPaginator(linked, get_paginate_count(request))`** — paginates the filtered list.
   `get_paginate_count` respects `?per_page=`, user prefs, and global `PAGINATE_COUNT`.
-- **`inc/paginator.html`** — NetBox's standard paginator partial; pass `paginator=paginator`
-  and `page=page_obj` (do NOT pass `htmx=True` — we use plain GET links, not HTMX).
+- **`inc/paginator.html`** — pass `htmx=True table=htmx_table` to emit `hx-get` links.
+  `htmx_table = SimpleNamespace(htmx_url=request.path, embedded=False)`.
+- **`htmx_partial(request)`** — returns `True` when the request carries `HX-Request` and
+  is not boosted. View returns `custom_objects_tab_partial.html` in that case.
+- The partial wraps everything in `<div id="custom_objects_list" class="htmx-container">`.
+  Paginator and sort-header links target this div via `hx-target` / `hx-swap="outerHTML"`.
 - Badge count (`_count_linked_custom_objects`) still counts the **unfiltered** total so the
   badge reflects all linked objects regardless of active search.
 - **`_count_linked_custom_objects`** uses `.count()` (DB-side `COUNT(*)`) per field —
@@ -122,6 +129,11 @@ Action buttons and column links use the `perms` templatetag from `utilities.temp
   distinct entries and URL reverse names don't collide
 - `inc/paginator.html` uses `page.smart_pages` (from `EnhancedPage`) — this is **not**
   available on Django's built-in `Page`; always use `EnhancedPaginator`
+- Template is split into two files: `custom_objects_tab.html` (full page, extends base_template)
+  and `custom_objects_tab_partial.html` (no extends — just the htmx-container div). The view
+  returns the partial when `htmx_partial(request)` is True.
+- The search form uses `hx-get` (no `method="get"`). The type select uses `hx-include="closest
+  form"` to pull in sibling fields (q, sort, dir, per_page) when it fires on change.
 
 ## TODO — Step-by-step Implementation Checklist
 
@@ -144,6 +156,7 @@ Action buttons and column links use the `perms` templatetag from `utilities.temp
 - [x] 15. Verify badge COUNT vs full fetch split (COUNT-only on detail page; full fetch only on tab)
 - [x] 16. Add permission-gated Edit button (`can_change`) and Delete button (`can_delete`) per row
 - [x] 17. Link the Type column to the CustomObjectType detail page (`can_view`-gated)
+- [x] 18. Add HTMX partial rendering (paginator, sort headers, search form, type dropdown)
 
 ## Critical Reference Files
 
@@ -166,6 +179,10 @@ Action buttons and column links use the `perms` templatetag from `utilities.temp
 6. Click tab — table shows: type name | object link | value | field name | actions
 7. Paginator appears when results exceed the per-page threshold
 8. Type a search term — table filters; badge count stays at total
+8a. Click a paginator link — only the table zone re-renders (no full page reload)
+8b. Click a sort column — table updates in-place; URL bar reflects new sort params
+8c. Change the type dropdown — table filters without full reload
+8d. Network tab in devtools: HTMX requests carry `HX-Request: true`; response has no `<html>` tag
 9. As a superuser: Edit and Delete buttons appear; Type column is a clickable link
 10. As a read-only user: no action buttons; Type column is a link if user has `view_customobjecttype`, plain text otherwise
 11. Click Edit → navigates to the Custom Object instance edit page

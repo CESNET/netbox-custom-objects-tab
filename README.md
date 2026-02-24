@@ -4,8 +4,8 @@ A NetBox 4.5.x plugin that adds a **Custom Objects** tab to standard object deta
 showing any Custom Object instances from the `netbox_custom_objects` plugin that reference
 those objects via OBJECT or MULTIOBJECT fields.
 
-The tab includes **pagination** and **text search** so it stays usable even when thousands
-of custom objects are linked.
+The tab includes **pagination**, **text search**, **column sorting**, and **type filtering**,
+with HTMX-powered partial updates so table interactions don't reload the full page.
 
 ## Screenshot
 
@@ -105,6 +105,12 @@ Clicking the **Type**, **Object**, or **Field** column header sorts the table
 in-memory. A second click on the same header reverses the direction. The active
 column shows an up/down arrow icon. Sort state is preserved when the search form
 is submitted.
+
+### HTMX / Partial updates
+Pagination clicks, column sort clicks, search form submissions, and type-dropdown
+changes all update the table zone in-place using HTMX — no full page reload. The
+URL is updated via `pushState` so links stay shareable and the browser back button
+returns to the previous filter/page state.
 
 ### Value column
 Each row includes a **Value** column showing the actual field value on the Custom

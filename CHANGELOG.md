@@ -42,3 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Permission-gated action buttons** — each row has an Edit button (requires `change`
   permission) and a Delete button (requires `delete` permission). Users without either
   permission see no action buttons.
+- **HTMX partial updates** — pagination, column sorting, search form submission, and
+  type-dropdown changes now swap only the table zone in-place, without a full page reload.
+  The URL is updated via `pushState` so links remain shareable and the browser back button
+  restores the previous filter/page state.
