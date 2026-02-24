@@ -11,32 +11,39 @@
       <table class="table table-hover attr-table mb-0">
         <thead hx-target="#custom_objects_list" hx-swap="outerHTML" hx-push-url="true">
           <tr>
+            {% if 'type' in selected_columns %}
             <th>
               <a hx-get="{{ sort_headers.type.url }}">
                 {% trans "Type" %}
                 {% if sort_headers.type.icon %}<i class="mdi mdi-{{ sort_headers.type.icon }}"></i>{% endif %}
               </a>
             </th>
+            {% endif %}
+            {% if 'object' in selected_columns %}
             <th>
               <a hx-get="{{ sort_headers.object.url }}">
                 {% trans "Object" %}
                 {% if sort_headers.object.icon %}<i class="mdi mdi-{{ sort_headers.object.icon }}"></i>{% endif %}
               </a>
             </th>
-            <th>{% trans "Value" %}</th>
+            {% endif %}
+            {% if 'value' in selected_columns %}<th>{% trans "Value" %}</th>{% endif %}
+            {% if 'field' in selected_columns %}
             <th>
-              <a hx-get="{{ sort_headers.field.url }}">
+              <a hx-get="{{ sort_headers.field.url %}">
                 {% trans "Field" %}
                 {% if sort_headers.field.icon %}<i class="mdi mdi-{{ sort_headers.field.icon }}"></i>{% endif %}
               </a>
             </th>
-            <th>{% trans "Tags" %}</th>
+            {% endif %}
+            {% if 'tags' in selected_columns %}<th>{% trans "Tags" %}</th>{% endif %}
             <th></th>
           </tr>
         </thead>
         <tbody>
           {% for obj, field, value in page_rows %}
             <tr>
+              {% if 'type' in selected_columns %}
               <td>
                 {% if request.user|can_view:field.custom_object_type %}
                   <a href="{{ field.custom_object_type.get_absolute_url }}">{{ field.custom_object_type }}</a>
@@ -44,7 +51,11 @@
                   {{ field.custom_object_type }}
                 {% endif %}
               </td>
+              {% endif %}
+              {% if 'object' in selected_columns %}
               <td><a href="{{ obj.get_absolute_url }}">{{ obj }}</a></td>
+              {% endif %}
+              {% if 'value' in selected_columns %}
               <td>
                 {% if field.type == 'object' %}
                   {% if value %}
@@ -65,7 +76,11 @@
                   &mdash;
                 {% endif %}
               </td>
+              {% endif %}
+              {% if 'field' in selected_columns %}
               <td>{{ field }}</td>
+              {% endif %}
+              {% if 'tags' in selected_columns %}
               <td>
                 {% for t in obj.tags.all %}
                   {% tag t %}{% if not forloop.last %} {% endif %}
@@ -73,6 +88,7 @@
                   &mdash;
                 {% endfor %}
               </td>
+              {% endif %}
               <td class="text-end text-nowrap">
                 {% if request.user|can_change:obj %}
                 <a href="{% url 'plugins:netbox_custom_objects:customobject_edit' pk=obj.pk custom_object_type=obj.custom_object_type.slug %}?return_url={{ return_url|urlencode }}" class="btn btn-yellow" role="button">

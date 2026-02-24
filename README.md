@@ -126,6 +126,13 @@ Object instance:
 - **Multi-Object** fields: comma-separated links to the related objects, truncated
   at 3 with an ellipsis when more are present.
 
+### Configure Table
+A **Configure Table** button in the card header opens a NetBox modal that lets
+authenticated users show, hide, and reorder the table columns (Type, Object, Value,
+Field, Tags). Preferences are stored per-user in `UserConfig` and respected on every
+subsequent page load, including HTMX partial updates. The Actions column is always
+visible and cannot be hidden.
+
 ### Action buttons
 Each row has right-aligned action buttons, shown only when the user has the relevant permission:
 

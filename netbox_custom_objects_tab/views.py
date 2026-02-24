@@ -2,19 +2,39 @@ import logging
 from types import SimpleNamespace
 from urllib.parse import urlencode
 
+import django_tables2 as tables2
 from django.apps import apps
 from django.contrib.contenttypes.models import ContentType
 from django.core.paginator import InvalidPage
 from django.shortcuts import get_object_or_404, render
+from django.utils.translation import gettext_lazy as _
 from django.views.generic import View
 
 from extras.choices import CustomFieldTypeChoices
 from netbox.plugins import get_plugin_config
+from netbox.tables import BaseTable
 from utilities.htmx import htmx_partial
 from utilities.paginator import EnhancedPaginator, get_paginate_count
 from utilities.views import ViewTab, register_model_view
 
 logger = logging.getLogger('netbox_custom_objects_tab')
+
+
+class CustomObjectsTabTable(BaseTable):
+    """Lightweight table class used only for column-preference machinery."""
+    type    = tables2.Column(verbose_name=_('Type'),   orderable=False)
+    object  = tables2.Column(verbose_name=_('Object'), orderable=False)
+    value   = tables2.Column(verbose_name=_('Value'),  orderable=False)
+    field   = tables2.Column(verbose_name=_('Field'),  orderable=False)
+    tags    = tables2.Column(verbose_name=_('Tags'),   orderable=False)
+    actions = tables2.Column(verbose_name='',          orderable=False)
+
+    exempt_columns = ('actions',)
+
+    class Meta(BaseTable.Meta):
+        fields = ('type', 'object', 'value', 'field', 'tags', 'actions')
+        default_columns = ('type', 'object', 'value', 'field', 'tags', 'actions')
+
 
 # Maximum number of related objects to show in the Value column for MULTIOBJECT fields.
 # One extra is fetched to detect truncation without a COUNT query.
@@ -184,6 +204,16 @@ def _make_tab_view(model_class, label='Custom Objects', weight=2000):
             instance = get_object_or_404(qs, pk=pk)
             linked_all = _get_linked_custom_objects(instance)
 
+            # Build table object for column-preference machinery (no data, just column config)
+            tab_table = CustomObjectsTabTable([], empty_text='')
+            visible_cols = None
+            if request.user.is_authenticated and (userconfig := getattr(request.user, 'config', None)):
+                visible_cols = userconfig.get(f'tables.{tab_table.name}.columns')
+            if visible_cols is None:
+                visible_cols = list(CustomObjectsTabTable.Meta.default_columns)
+            tab_table._set_columns(visible_cols)
+            selected_columns = {col for col, _ in tab_table.selected_columns} | set(tab_table.exempt_columns)
+
             # Collect unique types for the dropdown (always from the unfiltered list)
             seen_type_pks = set()
             available_types = []
@@ -280,6 +310,8 @@ def _make_tab_view(model_class, label='Custom Objects', weight=2000):
                 'sort_headers': sort_headers,
                 'htmx_table': SimpleNamespace(htmx_url=request.path, embedded=False),
                 'return_url': request.get_full_path(),
+                'tab_table': tab_table,
+                'selected_columns': selected_columns,
             }
 
             if htmx_partial(request):

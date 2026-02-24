@@ -181,6 +181,7 @@ Action buttons and column links use the `perms` templatetag from `utilities.temp
 - [x] 18. Add HTMX partial rendering (paginator, sort headers, search form, type dropdown)
 - [x] 19. Fix Edit/Delete return URL to redirect back to the Custom Objects tab
 - [x] 20. Add Tags column and tag filter dropdown to the Custom Objects tab
+- [x] 21. Add "Configure Table" button with per-user column show/hide/reorder preferences
 
 ## Critical Reference Files
 

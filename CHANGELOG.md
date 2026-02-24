@@ -53,6 +53,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   objects with a specific tag. Tag filtering composes with `?q=`, `?type=`, sort, and
   pagination. Tags are pre-fetched in bulk (`prefetch_related('tags')`) so there is no
   N+1 query cost.
+- **Configure Table** — a "Configure Table" button in the card header opens a NetBox
+  modal that lets authenticated users show, hide, and reorder columns (Type, Object,
+  Value, Field, Tags). Preferences are persisted per-user in `UserConfig` under
+  `tables.CustomObjectsTabTable.columns` and respected on every subsequent page load,
+  including HTMX partial updates. The Actions column is always visible and cannot be
+  hidden.
 
 ### Fixed
 

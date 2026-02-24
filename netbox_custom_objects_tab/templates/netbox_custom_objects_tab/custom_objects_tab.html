@@ -1,5 +1,5 @@
 {% extends base_template %}
-{% load i18n custom_object_buttons perms %}
+{% load i18n custom_object_buttons perms helpers %}
 
 {% block content %}
 <div class="row">
@@ -70,6 +70,15 @@
             <input type="hidden" name="per_page" value="{{ request.GET.per_page }}">
           {% endif %}
         </form>
+        {% if request.user.is_authenticated %}
+          <button type="button"
+                  class="btn btn-sm btn-outline-secondary"
+                  data-bs-toggle="modal"
+                  data-bs-target="#CustomObjectsTabTable_config"
+                  title="{% trans 'Configure Table' %}">
+            <i class="mdi mdi-cog"></i> {% trans "Configure Table" %}
+          </button>
+        {% endif %}
       </div>
 
       {# --- table zone (swapped by HTMX) --- #}
@@ -78,4 +87,8 @@
     </div>
   </div>
 </div>
+{% block modals %}
+  {{ block.super }}
+  {% table_config_form tab_table %}
+{% endblock modals %}
 {% endblock content %}
