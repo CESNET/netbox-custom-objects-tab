@@ -10,7 +10,7 @@ the full page.
 
 ## Screenshot
 
-![Custom Objects tab showing 3 linked objects with type filter dropdown](https://raw.githubusercontent.com/CESNET/netbox-custom-objects-tab/main/docs/screenshot.png)
+![Custom Objects tab showing 3 linked objects with type filter dropdown](https://raw.githubusercontent.com/CESNET/netbox-custom-objects-tab/master/docs/screenshot.png)
 
 ## Requirements
 
