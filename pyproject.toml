@@ -25,7 +25,7 @@ classifiers = [
 dependencies = []
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-django", "ruff"]
+dev = ["pytest", "pytest-django", "ruff", "django-tables2"]
 
 [project.urls]
 Homepage = "https://github.com/CESNET/netbox-custom-objects-tab"
