@@ -201,3 +201,81 @@ class TestRegisterTabs:
                 views.register_tabs()  # must not raise
 
         assert any('nonexistent_app_xyz.somemodel' in r.message for r in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# CustomObjectsTabTable
+# ---------------------------------------------------------------------------
+
+class TestCustomObjectsTabTable:
+    """Column-preference machinery on the lightweight table class."""
+
+    @pytest.fixture(autouse=True)
+    def table_cls(self):
+        from netbox_custom_objects_tab.views import CustomObjectsTabTable
+        self.cls = CustomObjectsTabTable
+
+    def test_default_columns_contains_all_six(self):
+        assert set(self.cls.Meta.default_columns) == {
+            'type', 'object', 'value', 'field', 'tags', 'actions'
+        }
+
+    def test_actions_is_exempt(self):
+        assert 'actions' in self.cls.exempt_columns
+
+    def test_name_property(self):
+        t = self.cls([], empty_text='')
+        assert t.name == 'CustomObjectsTabTable'
+
+    def test_all_columns_visible_by_default(self):
+        t = self.cls([], empty_text='')
+        t._set_columns(list(self.cls.Meta.default_columns))
+        visible = {col for col, _ in t.selected_columns}
+        assert {'type', 'object', 'value', 'field', 'tags'}.issubset(visible)
+
+    def test_hidden_column_not_in_selected(self):
+        t = self.cls([], empty_text='')
+        cols_without_value = [c for c in self.cls.Meta.default_columns if c != 'value']
+        t._set_columns(cols_without_value)
+        visible = {col for col, _ in t.selected_columns}
+        assert 'value' not in visible
+
+    def test_exempt_column_always_visible(self):
+        t = self.cls([], empty_text='')
+        # Pass only non-exempt, non-actions columns
+        t._set_columns(['type'])
+        # 'actions' is exempt — must not appear in selected_columns
+        # (exempt columns are excluded from the modal, not from rendering)
+        selected_names = {col for col, _ in t.selected_columns}
+        assert 'actions' not in selected_names   # exempt cols excluded from selected_columns
+
+
+# ---------------------------------------------------------------------------
+# _sort_header
+# ---------------------------------------------------------------------------
+
+class TestSortHeader:
+    @pytest.fixture(autouse=True)
+    def get_fn(self):
+        from netbox_custom_objects_tab.views import _sort_header
+        self.fn = _sort_header
+
+    def test_inactive_column_points_to_asc(self):
+        result = self.fn('', 'type', 'object', 'asc')
+        assert 'sort=type' in result['url']
+        assert 'dir=asc' in result['url']
+        assert result['icon'] is None
+
+    def test_active_asc_column_icon_is_arrow_up(self):
+        result = self.fn('', 'type', 'type', 'asc')
+        assert result['icon'] == 'arrow-up'
+        assert 'dir=desc' in result['url']
+
+    def test_active_desc_column_icon_is_arrow_down(self):
+        result = self.fn('', 'type', 'type', 'desc')
+        assert result['icon'] == 'arrow-down'
+        assert 'dir=asc' in result['url']
+
+    def test_base_params_preserved(self):
+        result = self.fn('q=foo&tag=bar', 'type', '', 'asc')
+        assert result['url'].startswith('?q=foo&tag=bar&')

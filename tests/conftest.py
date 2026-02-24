@@ -9,6 +9,8 @@ import sys
 from types import ModuleType
 from unittest.mock import MagicMock
 
+import django_tables2 as _tables2
+
 
 def _mock(dotted_name, **attrs):
     """
@@ -62,6 +64,47 @@ _mock('extras.choices', CustomFieldTypeChoices=_CustomFieldTypeChoices)
 _mock('utilities')
 _mock('utilities.views', ViewTab=MagicMock(), register_model_view=MagicMock())
 _mock('utilities.paginator', EnhancedPaginator=MagicMock(), get_paginate_count=MagicMock())
+_mock('utilities.htmx', htmx_partial=MagicMock())
+
+
+class _FakeBaseTable(_tables2.Table):
+    exempt_columns = ()
+
+    class Meta:
+        attrs = {}
+
+    @property
+    def name(self):
+        return self.__class__.__name__
+
+    def _get_columns(self, visible=True):
+        return [
+            (name, col.verbose_name)
+            for name, col in self.columns.items()
+            if col.visible == visible and name not in self.exempt_columns
+        ]
+
+    @property
+    def available_columns(self):
+        return sorted(self._get_columns(visible=False))
+
+    @property
+    def selected_columns(self):
+        return self._get_columns(visible=True)
+
+    def _set_columns(self, selected_columns):
+        for name, column in self.columns.items():
+            if column.name not in [*selected_columns, *self.exempt_columns]:
+                self.columns.hide(column.name)
+            else:
+                self.columns.show(column.name)
+        self.sequence = [
+            *[c for c in selected_columns if c in self.columns.names()],
+            *[c for c in self.columns.names() if c not in selected_columns],
+        ]
+
+
+_mock('netbox.tables', BaseTable=_FakeBaseTable)
 
 # --- netbox_custom_objects.* ---
 _mock('netbox_custom_objects')
