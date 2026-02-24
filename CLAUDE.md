@@ -57,12 +57,21 @@ from types import SimpleNamespace
 
 - **`_get_linked_custom_objects(instance)`** — returns a Python `list` of `(obj, field)` tuples
   by querying across multiple dynamic model tables. A single queryset is not possible.
+  Each queryset uses `.prefetch_related('tags')` so tag data is batch-fetched (one extra
+  query per field) and cached on each object instance — no N+1 cost in the template.
 - **`_filter_linked_objects(linked, q)`** — filters that list in Python; case-insensitive
   match against `str(obj)`, `str(field.custom_object_type)`, `str(field)`.
+- **`available_tags`** — collected in the view from `linked_all` (unfiltered) by iterating
+  `_obj.tags.all()` (uses prefetch cache). Deduplicated by slug, sorted by `name.lower()`.
+  Passed to context as `available_tags`; the active tag filter slug is `tag_slug`.
+- **Tag filter** — `tag_slug = request.GET.get('tag', '').strip()`; applied after the type
+  filter by checking `tag_slug in {t.slug for t in obj.tags.all()}` (cache hit, no query).
 - **`EnhancedPaginator(linked, get_paginate_count(request))`** — paginates the filtered list.
   `get_paginate_count` respects `?per_page=`, user prefs, and global `PAGINATE_COUNT`.
 - **`inc/paginator.html`** — pass `htmx=True table=htmx_table` to emit `hx-get` links.
   `htmx_table = SimpleNamespace(htmx_url=request.path, embedded=False)`.
+  The paginator uses `{% querystring request page=p %}` which copies all current GET params
+  (including `?tag=`, `?type=`, `?q=`, etc.) so filter state is preserved across pages.
 - **`htmx_partial(request)`** — returns `True` when the request carries `HX-Request` and
   is not boosted. View returns `custom_objects_tab_partial.html` in that case.
 - The partial wraps everything in `<div id="custom_objects_list" class="htmx-container">`.
@@ -171,6 +180,7 @@ Action buttons and column links use the `perms` templatetag from `utilities.temp
 - [x] 17. Link the Type column to the CustomObjectType detail page (`can_view`-gated)
 - [x] 18. Add HTMX partial rendering (paginator, sort headers, search form, type dropdown)
 - [x] 19. Fix Edit/Delete return URL to redirect back to the Custom Objects tab
+- [x] 20. Add Tags column and tag filter dropdown to the Custom Objects tab
 
 ## Critical Reference Files
 

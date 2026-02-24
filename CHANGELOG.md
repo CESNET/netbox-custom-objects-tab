@@ -46,6 +46,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   type-dropdown changes now swap only the table zone in-place, without a full page reload.
   The URL is updated via `pushState` so links remain shareable and the browser back button
   restores the previous filter/page state.
+- **Tags column** — each row in the Custom Objects table now shows the tags assigned to
+  that Custom Object instance as colored badges. Rows with no tags display `—`.
+- **Tag filter dropdown** (`?tag=<slug>`) — a tag dropdown appears in the search bar
+  whenever at least one linked Custom Object has a tag, letting users narrow the table to
+  objects with a specific tag. Tag filtering composes with `?q=`, `?type=`, sort, and
+  pagination. Tags are pre-fetched in bulk (`prefetch_related('tags')`) so there is no
+  N+1 query cost.
 
 ### Fixed
 

@@ -52,10 +52,10 @@ def _get_linked_custom_objects(instance):
             continue
 
         if field.type == CustomFieldTypeChoices.TYPE_OBJECT:
-            for obj in model.objects.filter(**{f'{field.name}_id': instance.pk}):
+            for obj in model.objects.filter(**{f'{field.name}_id': instance.pk}).prefetch_related('tags'):
                 results.append((obj, field))
         elif field.type == CustomFieldTypeChoices.TYPE_MULTIOBJECT:
-            for obj in model.objects.filter(**{field.name: instance.pk}):
+            for obj in model.objects.filter(**{field.name: instance.pk}).prefetch_related('tags'):
                 results.append((obj, field))
 
     return results
@@ -197,9 +197,20 @@ def _make_tab_view(model_class, label='Custom Objects', weight=2000):
             # Read filter/sort params
             q = request.GET.get('q', '')
             type_slug = request.GET.get('type', '')
+            tag_slug = request.GET.get('tag', '').strip()
             sort_col = request.GET.get('sort', '')
             sort_dir = request.GET.get('dir', 'asc')
             per_page = request.GET.get('per_page', '')
+
+            # Collect unique tags for the dropdown (always from the unfiltered list)
+            seen_tag_slugs = set()
+            available_tags = []
+            for _obj, _field in linked_all:
+                for t in _obj.tags.all():
+                    if t.slug not in seen_tag_slugs:
+                        seen_tag_slugs.add(t.slug)
+                        available_tags.append(t)
+            available_tags.sort(key=lambda t: t.name.lower())
 
             # Apply filters
             linked = _filter_linked_objects(linked_all, q)
@@ -207,6 +218,11 @@ def _make_tab_view(model_class, label='Custom Objects', weight=2000):
                 linked = [
                     (obj, field) for obj, field in linked
                     if field.custom_object_type.slug == type_slug
+                ]
+            if tag_slug:
+                linked = [
+                    (obj, field) for obj, field in linked
+                    if tag_slug in {t.slug for t in obj.tags.all()}
                 ]
 
             # In-memory sort (applied after filters, before pagination)
@@ -232,6 +248,8 @@ def _make_tab_view(model_class, label='Custom Objects', weight=2000):
                 base_params['q'] = q
             if type_slug:
                 base_params['type'] = type_slug
+            if tag_slug:
+                base_params['tag'] = tag_slug
             if per_page:
                 base_params['per_page'] = per_page
             sort_base = urlencode(base_params)
@@ -254,7 +272,9 @@ def _make_tab_view(model_class, label='Custom Objects', weight=2000):
                 'page_rows': page_rows,
                 'q': q,
                 'type_slug': type_slug,
+                'tag_slug': tag_slug,
                 'available_types': available_types,
+                'available_tags': available_tags,
                 'sort': sort_col,
                 'sort_dir': sort_dir,
                 'sort_headers': sort_headers,

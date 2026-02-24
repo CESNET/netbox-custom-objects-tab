@@ -21,7 +21,7 @@
             <button type="submit" class="btn btn-primary">
               <i class="mdi mdi-magnify"></i>
             </button>
-            {% if q or type_slug %}
+            {% if q or type_slug or tag_slug %}
               <a href="?" class="btn btn-outline-secondary" title="{% trans 'Clear filters' %}">
                 <i class="mdi mdi-close"></i>
               </a>
@@ -43,6 +43,23 @@
                 <option value="{{ cot.slug }}"{% if cot.slug == type_slug %} selected{% endif %}>
                   {{ cot }}
                 </option>
+              {% endfor %}
+            </select>
+          {% endif %}
+          {# Tag dropdown — only shown when any object has tags #}
+          {% if available_tags %}
+            <select name="tag"
+                    hx-get="{{ request.path }}"
+                    hx-target="#custom_objects_list"
+                    hx-swap="outerHTML"
+                    hx-push-url="true"
+                    hx-include="closest form"
+                    hx-trigger="change"
+                    class="form-select form-select-sm w-auto"
+                    aria-label="{% trans 'Filter by tag' %}">
+              <option value="">{% trans "All tags" %}</option>
+              {% for t in available_tags %}
+                <option value="{{ t.slug }}"{% if t.slug == tag_slug %} selected{% endif %}>{{ t.name }}</option>
               {% endfor %}
             </select>
           {% endif %}

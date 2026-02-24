@@ -4,8 +4,9 @@ A NetBox 4.5.x plugin that adds a **Custom Objects** tab to standard object deta
 showing any Custom Object instances from the `netbox_custom_objects` plugin that reference
 those objects via OBJECT or MULTIOBJECT fields.
 
-The tab includes **pagination**, **text search**, **column sorting**, and **type filtering**,
-with HTMX-powered partial updates so table interactions don't reload the full page.
+The tab includes **pagination**, **text search**, **column sorting**, **type filtering**,
+and **tag filtering**, with HTMX-powered partial updates so table interactions don't reload
+the full page.
 
 ## Screenshot
 
@@ -100,6 +101,12 @@ results to a single type. Uses the `?type=<slug>` query parameter. The dropdown
 auto-submits on selection and is populated from the types actually present in the
 current result set.
 
+### Tag filter
+A dropdown (shown when at least one linked Custom Object has a tag) lets you narrow
+results to objects with a specific tag. Uses the `?tag=<slug>` query parameter. The
+dropdown auto-submits on selection and is populated from the tags present across the
+full result set. Tag data is pre-fetched in bulk so there is no N+1 query cost.
+
 ### Column sorting
 Clicking the **Type**, **Object**, or **Field** column header sorts the table
 in-memory. A second click on the same header reverses the direction. The active
@@ -107,10 +114,10 @@ column shows an up/down arrow icon. Sort state is preserved when the search form
 is submitted.
 
 ### HTMX / Partial updates
-Pagination clicks, column sort clicks, search form submissions, and type-dropdown
-changes all update the table zone in-place using HTMX — no full page reload. The
-URL is updated via `pushState` so links stay shareable and the browser back button
-returns to the previous filter/page state.
+Pagination clicks, column sort clicks, search form submissions, type-dropdown changes,
+and tag-dropdown changes all update the table zone in-place using HTMX — no full page
+reload. The URL is updated via `pushState` so links stay shareable and the browser back
+button returns to the previous filter/page state.
 
 ### Value column
 Each row includes a **Value** column showing the actual field value on the Custom
@@ -148,6 +155,7 @@ The tab displays:
 | **Object** | Link to the Custom Object instance (sortable) |
 | **Value** | The value stored in the linking field — a link for Object fields, comma-separated links for Multi-Object fields |
 | **Field** | The field that holds the reference (sortable) |
+| **Tags** | Colored tag badges assigned to the Custom Object instance; `—` when none |
 | *(actions)* | Edit and Delete buttons, each shown only when the user has the corresponding permission |
 
 ## Support

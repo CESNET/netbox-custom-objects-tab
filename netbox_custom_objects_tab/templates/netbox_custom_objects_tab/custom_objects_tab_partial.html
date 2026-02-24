@@ -30,6 +30,7 @@
                 {% if sort_headers.field.icon %}<i class="mdi mdi-{{ sort_headers.field.icon }}"></i>{% endif %}
               </a>
             </th>
+            <th>{% trans "Tags" %}</th>
             <th></th>
           </tr>
         </thead>
@@ -65,6 +66,13 @@
                 {% endif %}
               </td>
               <td>{{ field }}</td>
+              <td>
+                {% for t in obj.tags.all %}
+                  {% tag t %}{% if not forloop.last %} {% endif %}
+                {% empty %}
+                  &mdash;
+                {% endfor %}
+              </td>
               <td class="text-end text-nowrap">
                 {% if request.user|can_change:obj %}
                 <a href="{% url 'plugins:netbox_custom_objects:customobject_edit' pk=obj.pk custom_object_type=obj.custom_object_type.slug %}?return_url={{ return_url|urlencode }}" class="btn btn-yellow" role="button">
@@ -84,7 +92,7 @@
     </div>
   {% else %}
     <div class="card-body text-muted">
-      {% if q or type_slug %}
+      {% if q or type_slug or tag_slug %}
         {% trans "No custom objects match your filters." %}
       {% else %}
         {% trans "No custom objects are linked to this object." %}
