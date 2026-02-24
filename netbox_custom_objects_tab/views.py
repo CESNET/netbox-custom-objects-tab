@@ -17,23 +17,24 @@ from utilities.htmx import htmx_partial
 from utilities.paginator import EnhancedPaginator, get_paginate_count
 from utilities.views import ViewTab, register_model_view
 
-logger = logging.getLogger('netbox_custom_objects_tab')
+logger = logging.getLogger("netbox_custom_objects_tab")
 
 
 class CustomObjectsTabTable(BaseTable):
     """Lightweight table class used only for column-preference machinery."""
-    type    = tables2.Column(verbose_name=_('Type'),   orderable=False)
-    object  = tables2.Column(verbose_name=_('Object'), orderable=False)
-    value   = tables2.Column(verbose_name=_('Value'),  orderable=False)
-    field   = tables2.Column(verbose_name=_('Field'),  orderable=False)
-    tags    = tables2.Column(verbose_name=_('Tags'),   orderable=False)
-    actions = tables2.Column(verbose_name='',          orderable=False)
 
-    exempt_columns = ('actions',)
+    type = tables2.Column(verbose_name=_("Type"), orderable=False)
+    object = tables2.Column(verbose_name=_("Object"), orderable=False)
+    value = tables2.Column(verbose_name=_("Value"), orderable=False)
+    field = tables2.Column(verbose_name=_("Field"), orderable=False)
+    tags = tables2.Column(verbose_name=_("Tags"), orderable=False)
+    actions = tables2.Column(verbose_name="", orderable=False)
+
+    exempt_columns = ("actions",)
 
     class Meta(BaseTable.Meta):
-        fields = ('type', 'object', 'value', 'field', 'tags', 'actions')
-        default_columns = ('type', 'object', 'value', 'field', 'tags', 'actions')
+        fields = ("type", "object", "value", "field", "tags", "actions")
+        default_columns = ("type", "object", "value", "field", "tags", "actions")
 
 
 # Maximum number of related objects to show in the Value column for MULTIOBJECT fields.
@@ -58,7 +59,7 @@ def _get_linked_custom_objects(instance):
             CustomFieldTypeChoices.TYPE_OBJECT,
             CustomFieldTypeChoices.TYPE_MULTIOBJECT,
         ],
-    ).select_related('custom_object_type')
+    ).select_related("custom_object_type")
 
     results = []
     for field in fields:
@@ -66,16 +67,16 @@ def _get_linked_custom_objects(instance):
             model = field.custom_object_type.get_model()
         except Exception:
             logger.exception(
-                'Could not get model for CustomObjectType %s',
+                "Could not get model for CustomObjectType %s",
                 field.custom_object_type_id,
             )
             continue
 
         if field.type == CustomFieldTypeChoices.TYPE_OBJECT:
-            for obj in model.objects.filter(**{f'{field.name}_id': instance.pk}).prefetch_related('tags'):
+            for obj in model.objects.filter(**{f"{field.name}_id": instance.pk}).prefetch_related("tags"):
                 results.append((obj, field))
         elif field.type == CustomFieldTypeChoices.TYPE_MULTIOBJECT:
-            for obj in model.objects.filter(**{field.name: instance.pk}).prefetch_related('tags'):
+            for obj in model.objects.filter(**{field.name: instance.pk}).prefetch_related("tags"):
                 results.append((obj, field))
 
     return results
@@ -96,7 +97,7 @@ def _count_linked_custom_objects(instance):
             CustomFieldTypeChoices.TYPE_OBJECT,
             CustomFieldTypeChoices.TYPE_MULTIOBJECT,
         ],
-    ).select_related('custom_object_type')
+    ).select_related("custom_object_type")
 
     total = 0
     for field in fields:
@@ -104,13 +105,13 @@ def _count_linked_custom_objects(instance):
             model = field.custom_object_type.get_model()
         except Exception:
             logger.exception(
-                'Could not get model for CustomObjectType %s',
+                "Could not get model for CustomObjectType %s",
                 field.custom_object_type_id,
             )
             continue
 
         if field.type == CustomFieldTypeChoices.TYPE_OBJECT:
-            total += model.objects.filter(**{f'{field.name}_id': instance.pk}).count()
+            total += model.objects.filter(**{f"{field.name}_id": instance.pk}).count()
         elif field.type == CustomFieldTypeChoices.TYPE_MULTIOBJECT:
             total += model.objects.filter(**{field.name: instance.pk}).count()
 
@@ -126,10 +127,9 @@ def _filter_linked_objects(linked, q):
     if not q:
         return linked
     return [
-        (obj, field) for obj, field in linked
-        if q in str(obj).lower()
-        or q in str(field.custom_object_type).lower()
-        or q in str(field).lower()
+        (obj, field)
+        for obj, field in linked
+        if q in str(obj).lower() or q in str(field.custom_object_type).lower() or q in str(field).lower()
     ]
 
 
@@ -148,15 +148,15 @@ def _get_field_value(obj, field):
         qs = getattr(obj, field.name, None)
         if qs is None:
             return []
-        return list(qs.all()[:_MAX_MULTIOBJECT_DISPLAY + 1])
+        return list(qs.all()[: _MAX_MULTIOBJECT_DISPLAY + 1])
     return None
 
 
 # Sort key lambdas keyed by the ?sort= query parameter value.
 _SORT_KEYS = {
-    'type': lambda t: str(t[1].custom_object_type).lower(),
-    'object': lambda t: str(t[0]).lower(),
-    'field': lambda t: str(t[1]).lower(),
+    "type": lambda t: str(t[1].custom_object_type).lower(),
+    "object": lambda t: str(t[0]).lower(),
+    "field": lambda t: str(t[1]).lower(),
 }
 
 
@@ -170,17 +170,17 @@ def _sort_header(sort_base, col, current_sort, current_dir):
              or None when it is not the active sort column
     """
     if current_sort == col:
-        next_dir = 'desc' if current_dir == 'asc' else 'asc'
-        icon = 'arrow-up' if current_dir == 'asc' else 'arrow-down'
+        next_dir = "desc" if current_dir == "asc" else "asc"
+        icon = "arrow-up" if current_dir == "asc" else "arrow-down"
     else:
-        next_dir = 'asc'
+        next_dir = "asc"
         icon = None
 
-    qs = f'{sort_base}&sort={col}&dir={next_dir}' if sort_base else f'sort={col}&dir={next_dir}'
-    return {'url': f'?{qs}', 'icon': icon}
+    qs = f"{sort_base}&sort={col}&dir={next_dir}" if sort_base else f"sort={col}&dir={next_dir}"
+    return {"url": f"?{qs}", "icon": icon}
 
 
-def _make_tab_view(model_class, label='Custom Objects', weight=2000):
+def _make_tab_view(model_class, label="Custom Objects", weight=2000):
     """
     Factory that returns a unique View subclass for model_class.
     Each model needs its own class so that NetBox's view registry stores
@@ -197,7 +197,7 @@ def _make_tab_view(model_class, label='Custom Objects', weight=2000):
 
         def get(self, request, pk):
             try:
-                qs = model_class.objects.restrict(request.user, 'view')
+                qs = model_class.objects.restrict(request.user, "view")
             except AttributeError:
                 qs = model_class.objects.all()
 
@@ -205,10 +205,10 @@ def _make_tab_view(model_class, label='Custom Objects', weight=2000):
             linked_all = _get_linked_custom_objects(instance)
 
             # Build table object for column-preference machinery (no data, just column config)
-            tab_table = CustomObjectsTabTable([], empty_text='')
+            tab_table = CustomObjectsTabTable([], empty_text="")
             visible_cols = None
-            if request.user.is_authenticated and (userconfig := getattr(request.user, 'config', None)):
-                visible_cols = userconfig.get(f'tables.{tab_table.name}.columns')
+            if request.user.is_authenticated and (userconfig := getattr(request.user, "config", None)):
+                visible_cols = userconfig.get(f"tables.{tab_table.name}.columns")
             if visible_cols is None:
                 visible_cols = list(CustomObjectsTabTable.Meta.default_columns)
             tab_table._set_columns(visible_cols)
@@ -225,12 +225,12 @@ def _make_tab_view(model_class, label='Custom Objects', weight=2000):
             available_types.sort(key=lambda t: str(t))
 
             # Read filter/sort params
-            q = request.GET.get('q', '')
-            type_slug = request.GET.get('type', '')
-            tag_slug = request.GET.get('tag', '').strip()
-            sort_col = request.GET.get('sort', '')
-            sort_dir = request.GET.get('dir', 'asc')
-            per_page = request.GET.get('per_page', '')
+            q = request.GET.get("q", "")
+            type_slug = request.GET.get("type", "")
+            tag_slug = request.GET.get("tag", "").strip()
+            sort_col = request.GET.get("sort", "")
+            sort_dir = request.GET.get("dir", "asc")
+            per_page = request.GET.get("per_page", "")
 
             # Collect unique tags for the dropdown (always from the unfiltered list)
             seen_tag_slugs = set()
@@ -245,89 +245,77 @@ def _make_tab_view(model_class, label='Custom Objects', weight=2000):
             # Apply filters
             linked = _filter_linked_objects(linked_all, q)
             if type_slug:
-                linked = [
-                    (obj, field) for obj, field in linked
-                    if field.custom_object_type.slug == type_slug
-                ]
+                linked = [(obj, field) for obj, field in linked if field.custom_object_type.slug == type_slug]
             if tag_slug:
-                linked = [
-                    (obj, field) for obj, field in linked
-                    if tag_slug in {t.slug for t in obj.tags.all()}
-                ]
+                linked = [(obj, field) for obj, field in linked if tag_slug in {t.slug for t in obj.tags.all()}]
 
             # In-memory sort (applied after filters, before pagination)
             if sort_col in _SORT_KEYS:
-                linked.sort(key=_SORT_KEYS[sort_col], reverse=(sort_dir == 'desc'))
+                linked.sort(key=_SORT_KEYS[sort_col], reverse=(sort_dir == "desc"))
 
             # Pagination
             paginator = EnhancedPaginator(linked, get_paginate_count(request))
             try:
-                page = paginator.page(int(request.GET.get('page', 1)))
+                page = paginator.page(int(request.GET.get("page", 1)))
             except (InvalidPage, ValueError):
                 page = paginator.page(1)
 
             # Resolve field values for just the current page (avoids N+1 on full list)
-            page_rows = [
-                (obj, field, _get_field_value(obj, field))
-                for obj, field in page.object_list
-            ]
+            page_rows = [(obj, field, _get_field_value(obj, field)) for obj, field in page.object_list]
 
             # Build the base query string (without sort/dir) for column sort links
             base_params = {}
             if q:
-                base_params['q'] = q
+                base_params["q"] = q
             if type_slug:
-                base_params['type'] = type_slug
+                base_params["type"] = type_slug
             if tag_slug:
-                base_params['tag'] = tag_slug
+                base_params["tag"] = tag_slug
             if per_page:
-                base_params['per_page'] = per_page
+                base_params["per_page"] = per_page
             sort_base = urlencode(base_params)
 
             sort_headers = {
-                col: _sort_header(sort_base, col, sort_col, sort_dir)
-                for col in ('type', 'object', 'field')
+                col: _sort_header(sort_base, col, sort_col, sort_dir) for col in ("type", "object", "field")
             }
 
             context = {
-                'object': instance,
-                'tab': self.tab,
+                "object": instance,
+                "tab": self.tab,
                 # base_template must match the parent model's detail template
                 # so that tabs, breadcrumbs, and the page header render correctly.
-                'base_template': (
-                    f'{instance._meta.app_label}/{instance._meta.model_name}.html'
-                ),
-                'page_obj': page,
-                'paginator': paginator,
-                'page_rows': page_rows,
-                'q': q,
-                'type_slug': type_slug,
-                'tag_slug': tag_slug,
-                'available_types': available_types,
-                'available_tags': available_tags,
-                'sort': sort_col,
-                'sort_dir': sort_dir,
-                'sort_headers': sort_headers,
-                'htmx_table': SimpleNamespace(htmx_url=request.path, embedded=False),
-                'return_url': request.get_full_path(),
-                'tab_table': tab_table,
-                'selected_columns': selected_columns,
+                "base_template": (f"{instance._meta.app_label}/{instance._meta.model_name}.html"),
+                "page_obj": page,
+                "paginator": paginator,
+                "page_rows": page_rows,
+                "q": q,
+                "type_slug": type_slug,
+                "tag_slug": tag_slug,
+                "available_types": available_types,
+                "available_tags": available_tags,
+                "sort": sort_col,
+                "sort_dir": sort_dir,
+                "sort_headers": sort_headers,
+                "htmx_table": SimpleNamespace(htmx_url=request.path, embedded=False),
+                "return_url": request.get_full_path(),
+                "tab_table": tab_table,
+                "selected_columns": selected_columns,
             }
 
             if htmx_partial(request):
                 return render(
                     request,
-                    'netbox_custom_objects_tab/custom_objects_tab_partial.html',
+                    "netbox_custom_objects_tab/custom_objects_tab_partial.html",
                     context,
                 )
             return render(
                 request,
-                'netbox_custom_objects_tab/custom_objects_tab.html',
+                "netbox_custom_objects_tab/custom_objects_tab.html",
                 context,
             )
 
-    _TabView.__name__ = f'{model_class.__name__}CustomObjectsTabView'
-    _TabView.__qualname__ = f'{model_class.__name__}CustomObjectsTabView'
+    _TabView.__name__ = f"{model_class.__name__}CustomObjectsTabView"
+    _TabView.__qualname__ = f"{model_class.__name__}CustomObjectsTabView"
     return _TabView
 
 
@@ -337,32 +325,32 @@ def register_tabs():
     in the plugin's 'models' setting. Called from AppConfig.ready().
     """
     try:
-        model_labels = get_plugin_config('netbox_custom_objects_tab', 'models')
-        tab_label = get_plugin_config('netbox_custom_objects_tab', 'label')
-        tab_weight = get_plugin_config('netbox_custom_objects_tab', 'weight')
+        model_labels = get_plugin_config("netbox_custom_objects_tab", "models")
+        tab_label = get_plugin_config("netbox_custom_objects_tab", "label")
+        tab_weight = get_plugin_config("netbox_custom_objects_tab", "weight")
     except Exception:
-        logger.exception('Could not read netbox_custom_objects_tab plugin config')
+        logger.exception("Could not read netbox_custom_objects_tab plugin config")
         return
 
     for model_label in model_labels:
         model_label = model_label.lower()
-        if model_label.endswith('.*'):
+        if model_label.endswith(".*"):
             app_label = model_label[:-2]
             try:
                 model_classes = list(apps.get_app_config(app_label).get_models())
             except LookupError:
                 logger.warning(
-                    'netbox_custom_objects_tab: could not find app %r — skipping',
+                    "netbox_custom_objects_tab: could not find app %r — skipping",
                     app_label,
                 )
                 continue
         else:
             try:
-                app_label, model_name = model_label.split('.', 1)
+                app_label, model_name = model_label.split(".", 1)
                 model_classes = [apps.get_model(app_label, model_name)]
             except (ValueError, LookupError):
                 logger.warning(
-                    'netbox_custom_objects_tab: could not find model %r — skipping',
+                    "netbox_custom_objects_tab: could not find model %r — skipping",
                     model_label,
                 )
                 continue
@@ -375,11 +363,11 @@ def register_tabs():
             #   @register_model_view(model_class, name='custom_objects', path='custom-objects')
             register_model_view(
                 model_class,
-                name='custom_objects',
-                path='custom-objects',
+                name="custom_objects",
+                path="custom-objects",
             )(view_class)
             logger.debug(
-                'netbox_custom_objects_tab: registered tab for %s.%s',
+                "netbox_custom_objects_tab: registered tab for %s.%s",
                 app_label,
                 model_name,
             )
