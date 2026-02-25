@@ -24,12 +24,17 @@ Always run both before committing Python changes.
 
 ## Purpose
 
-Adds a **"Custom Objects"** tab to NetBox object detail pages (Device, Site, Rack, etc.),
-showing Custom Object instances from the `netbox_custom_objects` plugin that reference
-those objects via OBJECT or MULTIOBJECT typed fields.
+Adds **two tab modes** to NetBox object detail pages (Device, Site, Rack, etc.):
 
-The tab supports **pagination** (NetBox `EnhancedPaginator`) and **`?q=` text search**
-so it stays usable with large numbers of linked objects.
+1. **Combined tab** — a single "Custom Objects" tab showing all Custom Object instances
+   from any Custom Object Type that reference the parent object. Supports pagination,
+   text search, type/tag filters, column sorting, and per-user column preferences.
+
+2. **Typed tabs** (per-type) — each Custom Object Type gets its own tab with a
+   **full-featured** type-specific list view: same columns, filters, search, bulk actions,
+   edit/delete, and configure table as the native `/plugins/custom-objects/<slug>/` page.
+
+Both modes coexist. Config variables control which models get which behavior.
 
 ## Architecture
 
@@ -38,10 +43,42 @@ so it stays usable with large numbers of linked objects.
 | File | Role |
 |------|------|
 | `netbox_custom_objects_tab/__init__.py` | `PluginConfig`; calls `views.register_tabs()` in `ready()` |
-| `netbox_custom_objects_tab/views.py` | View factory + `register_tabs()` using `register_model_view` + `ViewTab` |
+| `netbox_custom_objects_tab/views/__init__.py` | `register_tabs()` + `_resolve_model_labels()` helper |
+| `netbox_custom_objects_tab/views/combined.py` | Combined-tab view factory + helpers |
+| `netbox_custom_objects_tab/views/typed.py` | Per-type tab view factory + dynamic table/filterset builders |
 | `netbox_custom_objects_tab/urls.py` | Empty `urlpatterns` (required by NetBox plugin loader) |
-| `netbox_custom_objects_tab/templates/netbox_custom_objects_tab/custom_objects_tab.html` | Tab content template (full page, extends base_template) |
-| `netbox_custom_objects_tab/templates/netbox_custom_objects_tab/custom_objects_tab_partial.html` | Swappable HTMX zone — returned for HTMX partial requests; no `{% extends %}` |
+| `templates/.../combined/tab.html` | Combined tab full page (extends base_template) |
+| `templates/.../combined/tab_partial.html` | Combined tab HTMX zone (no extends) |
+| `templates/.../typed/tab.html` | Typed tab full page (extends base_template, mirrors `generic/object_list.html`) |
+
+## Config Design
+
+```python
+# __init__.py default_settings
+default_settings = {
+    "typed_models": [],       # per-type tabs (opt-in, empty by default)
+    "combined_models": [      # combined tab (current behavior)
+        "dcim.*", "ipam.*", "virtualization.*", "tenancy.*",
+    ],
+    "combined_label": "Custom Objects",
+    "combined_weight": 2000,
+    "typed_weight": 2100,     # all typed tabs share this weight
+}
+```
+
+Both `typed_models` and `combined_models` accept the same label formats:
+
+| Format | Behaviour |
+|--------|-----------|
+| `dcim.device` | Registers for that single model |
+| `dcim.*` | Registers for **every model** in the `dcim` app |
+
+A model can appear in both lists and get both tab styles.
+
+**Third-party plugin models are fully supported:**
+```python
+'combined_models': ['dcim.*', 'ipam.*', 'inventory_monitor.*']
+```
 
 ## How Custom Objects Link to NetBox Objects
 
@@ -65,141 +102,85 @@ Reference: `netbox_custom_objects/template_content.py::CustomObjectLink.left_pag
 from utilities.views import ViewTab, register_model_view
 from utilities.paginator import EnhancedPaginator, get_paginate_count
 from netbox_custom_objects.models import CustomObjectTypeField
-from extras.choices import CustomFieldTypeChoices
+from extras.choices import CustomFieldTypeChoices, CustomFieldUIVisibleChoices
 from netbox.plugins import get_plugin_config
 from utilities.htmx import htmx_partial
-from types import SimpleNamespace
+from netbox_custom_objects.tables import CustomObjectTable
+from netbox_custom_objects import field_types
+from netbox_custom_objects.filtersets import get_filterset_class
+from netbox.forms import NetBoxModelFilterSetForm
+from netbox.forms.mixins import SavedFiltersMixin
+from utilities.forms.fields import TagFilterField
 ```
 
-## Pagination & Filtering Design
+## Combined Tab — Pagination & Filtering Design
 
 - **`_get_linked_custom_objects(instance)`** — returns a Python `list` of `(obj, field)` tuples
   by querying across multiple dynamic model tables. A single queryset is not possible.
-  Each queryset uses `.prefetch_related('tags')` so tag data is batch-fetched (one extra
-  query per field) and cached on each object instance — no N+1 cost in the template.
+  Each queryset uses `.prefetch_related('tags')` so tag data is batch-fetched.
 - **`_filter_linked_objects(linked, q)`** — filters that list in Python; case-insensitive
   match against `str(obj)`, `str(field.custom_object_type)`, `str(field)`.
-- **`available_tags`** — collected in the view from `linked_all` (unfiltered) by iterating
-  `_obj.tags.all()` (uses prefetch cache). Deduplicated by slug, sorted by `name.lower()`.
-  Passed to context as `available_tags`; the active tag filter slug is `tag_slug`.
-- **Tag filter** — `tag_slug = request.GET.get('tag', '').strip()`; applied after the type
-  filter by checking `tag_slug in {t.slug for t in obj.tags.all()}` (cache hit, no query).
-- **`EnhancedPaginator(linked, get_paginate_count(request))`** — paginates the filtered list.
-  `get_paginate_count` respects `?per_page=`, user prefs, and global `PAGINATE_COUNT`.
-- **`inc/paginator.html`** — pass `htmx=True table=htmx_table` to emit `hx-get` links.
-  `htmx_table = SimpleNamespace(htmx_url=request.path, embedded=False)`.
-  The paginator uses `{% querystring request page=p %}` which copies all current GET params
-  (including `?tag=`, `?type=`, `?q=`, etc.) so filter state is preserved across pages.
-- **`htmx_partial(request)`** — returns `True` when the request carries `HX-Request` and
-  is not boosted. View returns `custom_objects_tab_partial.html` in that case.
-- The partial wraps everything in `<div id="custom_objects_list" class="htmx-container">`.
-  Paginator and sort-header links target this div via `hx-target` / `hx-swap="outerHTML"`.
-- Badge count (`_count_linked_custom_objects`) still counts the **unfiltered** total so the
-  badge reflects all linked objects regardless of active search.
-- **`_count_linked_custom_objects`** uses `.count()` (DB-side `COUNT(*)`) per field —
-  no object rows are fetched. Full rows are loaded only when the tab view itself is
-  called (`_get_linked_custom_objects`). Verified empirically: on a Device with 2214
-  linked custom objects, the detail page (`/dcim/devices/<pk>/`) runs only COUNT queries;
-  the full fetch fires only on `/dcim/devices/<pk>/custom-objects/`.
+- **`available_tags`** — collected from `linked_all` (unfiltered), deduplicated by slug.
+- **Tag filter** — applied after the type filter by checking tag slugs (cache hit, no query).
+- **`EnhancedPaginator`** — paginates the filtered list.
+- **`htmx_partial(request)`** — returns partial template for HTMX requests.
+- Badge count uses `.count()` (DB-side `COUNT(*)`) per field — no full rows fetched.
 
-## Model Registration
+## Typed Tab — Architecture
 
-`register_tabs()` in `views.py` supports two label formats in the `models` config:
+The typed tab reuses components from `netbox_custom_objects`:
 
-| Format | Behaviour |
-|--------|-----------|
-| `dcim.device` | Registers the tab for that single model |
-| `dcim.*` | Registers the tab for **every model** in the `dcim` app |
+| What | Import path |
+|------|-------------|
+| `CustomObjectTable` | `netbox_custom_objects.tables.CustomObjectTable` — base table with pk, id, actions, tags |
+| `FIELD_TYPE_CLASS` | `netbox_custom_objects.field_types.FIELD_TYPE_CLASS` — column + filter generation |
+| `get_filterset_class()` | `netbox_custom_objects.filtersets.get_filterset_class` — dynamic filterset |
+| Bulk action template tags | `netbox_custom_objects.templatetags.custom_object_buttons` |
 
-Default: `['dcim.*', 'ipam.*', 'virtualization.*', 'tenancy.*', 'contacts.*']`
+Key functions in `views/typed.py`:
 
-**Third-party plugin models are fully supported.** Django's `apps.get_app_config()` and
-`apps.get_model()` treat plugin apps identically to built-in apps, so any installed plugin's
-models work with the same syntax:
+- **`_build_typed_table_class(cot, model)`** — dynamically creates a table class replicating
+  `CustomObjectTableMixin.get_table()` logic from `netbox_custom_objects`.
+- **`_build_filterset_form(cot, model)`** — dynamically creates a filter form replicating
+  `CustomObjectListView.get_filterset_form()`.
+- **`_count_for_type(cot, field_infos)`** — returns a badge callable (COUNT-only).
+- **`_make_typed_tab_view(model, cot, field_infos, weight)`** — view factory. The `get()`
+  method builds a base queryset (union of field filters + `.distinct()`), applies filterset,
+  builds table, calls `table.configure(request)`, and returns the typed template.
+- **`register_typed_tabs(models, weight)`** — pre-fetches all fields, groups by
+  `(content_type, custom_object_type)`, registers one view per pair.
 
-```python
-'models': ['dcim.*', 'ipam.*', 'inventory_monitor.*']
-```
-
-Verified working with `inventory_monitor` and other third-party NetBox plugins.
+HTMX for typed tabs: the view returns `htmx/table.html` (NetBox standard) for HTMX requests.
+No custom partial needed — `table.configure(request)` handles pagination and ordering.
 
 ## Permission Checks in Template
 
-Action buttons and column links use the `perms` templatetag from `utilities.templatetags.perms`:
+Combined tab uses inline `<a>` buttons with `can_change`/`can_delete` filters (see combined templates).
+Typed tab uses `CustomObjectActionsColumn` from `netbox_custom_objects.tables` which handles
+permissions internally via `get_permission_for_model()`.
 
-```django
-{% load perms %}
-{% if request.user|can_change:obj %}
-<a href="{% url 'plugins:netbox_custom_objects:customobject_edit' pk=obj.pk custom_object_type=obj.custom_object_type.slug %}?return_url={{ return_url|urlencode }}" class="btn btn-yellow" role="button">...</a>
-{% endif %}
-{% if request.user|can_delete:obj %}
-<a href="{% url 'plugins:netbox_custom_objects:customobject_delete' pk=obj.pk custom_object_type=obj.custom_object_type.slug %}?return_url={{ return_url|urlencode }}" class="btn btn-red" role="button">...</a>
-{% endif %}
-{% if request.user|can_view:field.custom_object_type %}<a href="...">...{% endif %}
-```
-
-- `can_change`, `can_delete`, `can_view` are template filters that take the user as the
-  left-hand value and the object instance as the argument.
-- Edit and Delete are rendered as **inline `<a>` buttons** (not inclusion tags) so that
-  `?return_url={{ return_url|urlencode }}` can be appended. `return_url` is set in the
-  view context as `request.get_full_path()` (path + query string, e.g.
-  `/dcim/devices/42/custom-objects/?q=foo&sort=type&dir=asc`), so active filters are
-  preserved when the user returns from Edit or Delete.
-- The `custom_object_edit_button` / `custom_object_delete_button` inclusion tags from
-  `netbox_custom_objects` do **not** accept a `return_url` argument — do not use them.
-- Do **not** add bulk-edit or bulk-delete buttons to this tab — the tab shows objects
+- Do **not** add bulk-edit or bulk-delete buttons to the **combined** tab — it shows objects
   from multiple different Custom Object Types, so bulk editing across types is meaningless.
+- Typed tabs **do** support bulk actions since all objects are the same type.
 
 ## Gotchas
 
 - `register_model_view` must run inside `AppConfig.ready()` — not at module level
 - `hide_if_empty=True` on ViewTab requires the badge callable to return `None` (not `0`)
-  when the count is zero; `0` is falsy but some NetBox versions check truthiness
+  when the count is zero
 - Template must `{% extends base_template %}` where `base_template` is set in view context
-  as `f"{app_label}/{model_name}.html"` — this gives proper breadcrumbs, tabs, page header
-- `CustomObjectTypeField.related_object_type` is a FK to `core.ObjectType` (a proxy of
-  Django's ContentType); using `ContentType.objects.get_for_model()` works because the
-  underlying DB table and IDs are shared
-- Each model needs its own View subclass (factory pattern) so the view registry stores
-  distinct entries and URL reverse names don't collide
-- `inc/paginator.html` uses `page.smart_pages` (from `EnhancedPage`) — this is **not**
-  available on Django's built-in `Page`; always use `EnhancedPaginator`
-- Template is split into two files: `custom_objects_tab.html` (full page, extends base_template)
-  and `custom_objects_tab_partial.html` (no extends — just the htmx-container div). The view
-  returns the partial when `htmx_partial(request)` is True.
-- The search form uses `hx-get` (no `method="get"`). The type select uses `hx-include="closest
-  form"` to pull in sibling fields (q, sort, dir, per_page) when it fires on change.
-- `CustomObjectDeleteView.get_return_url()` overrides the mixin and ignores request params.
-  However, `ObjectDeleteView.post()` checks `form.cleaned_data['return_url']` **before**
-  calling `get_return_url()`, so passing `?return_url=` in the delete button URL still works
-  — NetBox initialises the delete confirmation form's hidden `return_url` field from the
-  GET param, which is then submitted with the form.
-
-## TODO — Step-by-step Implementation Checklist
-
-- [x] 1. Create `.gitignore`
-- [x] 2. Create `pyproject.toml`
-- [x] 3. Create `netbox_custom_objects_tab/__init__.py` (PluginConfig)
-- [x] 4. Create `netbox_custom_objects_tab/views.py` (view factory + register_tabs)
-- [x] 5. Create `netbox_custom_objects_tab/urls.py` (empty urlpatterns)
-- [x] 6. Create `netbox_custom_objects_tab/templates/netbox_custom_objects_tab/custom_objects_tab.html`
-- [x] 7. Create `README.md` and `CLAUDE.md`
-- [x] 8. Initialize git repo: `git init && git add -A && git commit -m "Initial plugin scaffold"`
-- [x] 9. Install into NetBox venv: `source /opt/netbox/venv/bin/activate && pip install -e /opt/custom_objects_additional_tab_plugin/`
-- [x] 10. Add plugin to NetBox `configuration.py` under `PLUGINS` and `PLUGINS_CONFIG`
-- [x] 11. Restart NetBox: `sudo systemctl restart netbox netbox-rq`
-- [x] 12. Test: create a Custom Object Type with a Device field, create a Custom Object
-          instance referencing a Device, verify the "Custom Objects" tab appears on the
-          Device detail page with badge count = 1
-- [x] 13. Add wildcard model registration (`dcim.*`, `ipam.*`)
-- [x] 14. Add pagination (`EnhancedPaginator`) and `?q=` text search
-- [x] 15. Verify badge COUNT vs full fetch split (COUNT-only on detail page; full fetch only on tab)
-- [x] 16. Add permission-gated Edit button (`can_change`) and Delete button (`can_delete`) per row
-- [x] 17. Link the Type column to the CustomObjectType detail page (`can_view`-gated)
-- [x] 18. Add HTMX partial rendering (paginator, sort headers, search form, type dropdown)
-- [x] 19. Fix Edit/Delete return URL to redirect back to the Custom Objects tab
-- [x] 20. Add Tags column and tag filter dropdown to the Custom Objects tab
-- [x] 21. Add "Configure Table" button with per-user column show/hide/reorder preferences
+  as `f"{app_label}/{model_name}.html"`
+- `CustomObjectTypeField.related_object_type` is a FK to `core.ObjectType` (proxy of ContentType)
+- Each model needs its own View subclass (factory pattern) for distinct registry entries
+- `inc/paginator.html` uses `page.smart_pages` — always use `EnhancedPaginator`
+- Combined tab template is split: `combined/tab.html` (full page) and `combined/tab_partial.html`
+  (HTMX zone). Typed tab uses NetBox's `htmx/table.html` directly.
+- `table.htmx_url` must be set on the instance to shadow `@cached_property` (avoids reverse
+  error for dynamic models)
+- Typed tabs use `custom-objects-{slug}` path prefix — avoids collisions with built-in paths
+- Multiple fields of same type → union querysets with `.distinct()`
+- Tabs registered at `ready()` — new Custom Object Types need a restart
+- `SavedFiltersMixin` lives at `netbox.forms.mixins`, not `extras.forms.mixins`
 
 ## Critical Reference Files
 
@@ -207,29 +188,24 @@ Action buttons and column links use the `perms` templatetag from `utilities.temp
 |------|---------|
 | `/opt/netbox/venv/lib/python3.12/site-packages/netbox_custom_objects/template_content.py` | Query pattern to replicate |
 | `/opt/netbox/venv/lib/python3.12/site-packages/netbox_custom_objects/models.py` | `CustomObjectTypeField` model structure |
+| `/opt/netbox/venv/lib/python3.12/site-packages/netbox_custom_objects/views.py` | `CustomObjectTableMixin.get_table()` + `get_filterset_form()` |
+| `/opt/netbox/venv/lib/python3.12/site-packages/netbox_custom_objects/tables.py` | `CustomObjectTable`, `CustomObjectActionsColumn` |
+| `/opt/netbox/venv/lib/python3.12/site-packages/netbox_custom_objects/filtersets.py` | `get_filterset_class()` |
+| `/opt/netbox/venv/lib/python3.12/site-packages/netbox_custom_objects/field_types.py` | `FIELD_TYPE_CLASS` dict |
 | `/opt/netbox/netbox/utilities/views.py` | `register_model_view` + `ViewTab` API |
 | `/opt/netbox/netbox/utilities/paginator.py` | `EnhancedPaginator` + `get_paginate_count` |
-| `/opt/netbox/netbox/templates/inc/paginator.html` | Pagination partial — expects `page` + `paginator` context vars |
-| `/opt/netbox/netbox/netbox/views/generic/object_views.py` | How `base_template` context is constructed |
+| `/opt/netbox/netbox/templates/htmx/table.html` | HTMX table template used by typed tabs |
+| `/opt/netbox/netbox/templates/generic/object_list.html` | Full list view layout pattern |
 
 ## Verification Steps
 
 1. Activate venv and install: `pip install -e /opt/custom_objects_additional_tab_plugin/`
 2. Add to NetBox config, restart
-3. In NetBox UI: Customization → Custom Object Types → create a type with a Device field
-4. Create a Custom Object instance that references an existing Device
-5. Navigate to that Device's detail page — "Custom Objects" tab appears (badge = 1)
-6. Click tab — table shows: type name | object link | value | field name | actions
-7. Paginator appears when results exceed the per-page threshold
-8. Type a search term — table filters; badge count stays at total
-8a. Click a paginator link — only the table zone re-renders (no full page reload)
-8b. Click a sort column — table updates in-place; URL bar reflects new sort params
-8c. Change the type dropdown — table filters without full reload
-8d. Network tab in devtools: HTMX requests carry `HX-Request: true`; response has no `<html>` tag
-9. As a superuser: Edit and Delete buttons appear; Type column is a clickable link
-10. As a read-only user: no action buttons; Type column is a link if user has `view_customobjecttype`, plain text otherwise
-11. Click Edit → navigates to the Custom Object instance edit page; save → returns to the tab
-12. Click Delete → navigates to the delete confirmation page; confirm → returns to the tab
-13. Click the Type column link → navigates to the Custom Object Type detail page
-14. Delete the custom object — tab disappears
-15. Check logs: `journalctl -u netbox` for any import errors
+3. Combined tab: navigate to Device detail → "Custom Objects" tab appears with badge
+4. Typed tab: with `typed_models: ['dcim.*']`, per-type tabs appear (e.g. "Link - ISISs")
+5. Typed tab: type-specific columns, filters sidebar, bulk actions, configure table all work
+6. HTMX: pagination and sorting update in-place (no full reload)
+7. Bulk actions: select rows → bulk edit/delete work, return URL correct
+8. Per-row edit/delete: action buttons work, return URL preserves tab
+9. Remove all objects of one type → typed tab disappears
+10. Combined tab unchanged when typed tabs enabled

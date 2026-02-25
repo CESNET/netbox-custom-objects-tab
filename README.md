@@ -6,13 +6,17 @@
 [![NetBox](https://img.shields.io/badge/NetBox-4.5.x-blue)](https://github.com/netbox-community/netbox)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 
-A NetBox 4.5.x plugin that adds a **Custom Objects** tab to standard object detail pages,
-showing any Custom Object instances from the `netbox_custom_objects` plugin that reference
+A NetBox 4.5.x plugin that adds **Custom Objects** tabs to standard object detail pages,
+showing Custom Object instances from the `netbox_custom_objects` plugin that reference
 those objects via OBJECT or MULTIOBJECT fields.
 
-The tab includes **pagination**, **text search**, **column sorting**, **type filtering**,
-and **tag filtering**, with HTMX-powered partial updates so table interactions don't reload
-the full page.
+Two tab modes are available:
+
+- **Combined tab** — a single tab showing all Custom Object Types in one table, with
+  pagination, text search, column sorting, type/tag filtering, and HTMX partial updates.
+- **Typed tabs** — each Custom Object Type gets its own tab with a full-featured list view
+  (type-specific columns, filterset sidebar, bulk actions, configure table) matching the
+  native Custom Objects list page.
 
 ## Screenshot
 
@@ -21,13 +25,14 @@ the full page.
 ## Requirements
 
 - NetBox 4.5.0 – 4.5.99
-- `netbox_custom_objects` plugin installed and configured
+- `netbox_custom_objects` plugin **≥ 0.4.6** installed and configured
 
 ## Compatibility
 
-| Plugin version | NetBox version |
-|----------------|----------------|
-| 1.0.x          | 4.5.x          |
+| Plugin version | NetBox version | `netbox_custom_objects` version |
+|----------------|----------------|---------------------------------|
+| 2.0.x          | 4.5.x          | ≥ 0.4.6                        |
+| 1.0.x          | 4.5.x          | ≥ 0.4.4                        |
 
 ## Installation
 
@@ -47,9 +52,11 @@ PLUGINS = [
 # Optional — defaults shown below
 PLUGINS_CONFIG = {
     'netbox_custom_objects_tab': {
-        'models': ['dcim.*', 'ipam.*', 'virtualization.*', 'tenancy.*', 'contacts.*'],
-        'label': 'Custom Objects',
-        'weight': 2000,
+        'combined_models': ['dcim.*', 'ipam.*', 'virtualization.*', 'tenancy.*'],
+        'combined_label': 'Custom Objects',
+        'combined_weight': 2000,
+        'typed_models': [],       # opt-in: e.g. ['dcim.*']
+        'typed_weight': 2100,
     }
 }
 ```
@@ -58,26 +65,34 @@ Restart NetBox. No database migrations required.
 
 ## Configuration
 
-| Setting  | Default | Description |
-|----------|---------|-------------|
-| `models` | `['dcim.*', 'ipam.*', 'virtualization.*', 'tenancy.*', 'contacts.*']` | Models that get the Custom Objects tab. Accepts `app_label.model_name` strings **or** `app_label.*` wildcards to register every model in an app. |
-| `label`  | `'Custom Objects'` | Text displayed on the tab. |
-| `weight` | `2000` | Controls tab position in the tab bar; lower values appear further left. |
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `combined_models` | `['dcim.*', 'ipam.*', 'virtualization.*', 'tenancy.*']` | Models that get the combined "Custom Objects" tab. Accepts `app_label.model_name` or `app_label.*` wildcards. |
+| `combined_label` | `'Custom Objects'` | Text displayed on the combined tab. |
+| `combined_weight` | `2000` | Tab position for the combined tab; lower = further left. |
+| `typed_models` | `[]` | Models that get per-type tabs (opt-in, empty by default). Same format as `combined_models`. |
+| `typed_weight` | `2100` | Tab position for all typed tabs. |
+
+A model can appear in both `combined_models` and `typed_models` to get both tab styles.
 
 ### Examples
 
 ```python
-# Default — all common NetBox apps
-'models': ['dcim.*', 'ipam.*', 'virtualization.*', 'tenancy.*', 'contacts.*']
+# Combined tab only (default)
+'combined_models': ['dcim.*', 'ipam.*', 'virtualization.*', 'tenancy.*']
+
+# Per-type tabs for dcim models
+'typed_models': ['dcim.*']
+
+# Both modes for dcim, combined only for others
+'combined_models': ['dcim.*', 'ipam.*', 'virtualization.*', 'tenancy.*'],
+'typed_models': ['dcim.*'],
 
 # Only specific models
-'models': ['dcim.device', 'dcim.site', 'ipam.prefix']
-
-# Mix wildcards and specifics
-'models': ['dcim.*', 'virtualization.*', 'ipam.ipaddress']
+'combined_models': ['dcim.device', 'dcim.site', 'ipam.prefix']
 
 # Third-party plugin models work identically
-'models': ['dcim.*', 'ipam.*', 'inventory_monitor.*']
+'combined_models': ['dcim.*', 'ipam.*', 'inventory_monitor.*']
 ```
 
 Third-party plugin models are fully supported — Django treats plugin apps and built-in apps
