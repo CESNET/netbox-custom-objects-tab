@@ -2,6 +2,7 @@ import logging
 
 from django.contrib.contenttypes.models import ContentType
 from django.db.models import Q
+from django.db.utils import OperationalError, ProgrammingError
 from django.shortcuts import get_object_or_404, render
 from django.views.generic import View
 from extras.choices import CustomFieldTypeChoices, CustomFieldUIVisibleChoices
@@ -247,32 +248,39 @@ def register_typed_tabs(model_classes, weight):
     Pre-fetches all relevant CustomObjectTypeFields and groups them.
     """
 
-    # Collect all relevant fields
-    all_fields = CustomObjectTypeField.objects.filter(
-        type__in=[
-            CustomFieldTypeChoices.TYPE_OBJECT,
-            CustomFieldTypeChoices.TYPE_MULTIOBJECT,
-        ],
-    ).select_related("custom_object_type")
+    try:
+        # Collect all relevant fields
+        all_fields = CustomObjectTypeField.objects.filter(
+            type__in=[
+                CustomFieldTypeChoices.TYPE_OBJECT,
+                CustomFieldTypeChoices.TYPE_MULTIOBJECT,
+            ],
+        ).select_related("custom_object_type")
 
-    # Group by (content_type_id, custom_object_type_pk)
-    # -> list of (field_name, field_type)
-    from collections import defaultdict
+        # Group by (content_type_id, custom_object_type_pk)
+        # -> list of (field_name, field_type)
+        from collections import defaultdict
 
-    ct_cot_fields = defaultdict(list)
-    ct_cot_map = {}  # (ct_id, cot_pk) -> CustomObjectType
-    for field in all_fields:
-        if field.related_object_type_id is None:
-            continue
-        key = (field.related_object_type_id, field.custom_object_type_id)
-        ct_cot_fields[key].append((field.name, field.type))
-        ct_cot_map[key] = field.custom_object_type
+        ct_cot_fields = defaultdict(list)
+        ct_cot_map = {}  # (ct_id, cot_pk) -> CustomObjectType
+        for field in all_fields:
+            if field.related_object_type_id is None:
+                continue
+            key = (field.related_object_type_id, field.custom_object_type_id)
+            ct_cot_fields[key].append((field.name, field.type))
+            ct_cot_map[key] = field.custom_object_type
 
-    # Build a set of content_type_ids we care about
-    model_ct_map = {}  # content_type_id -> model_class
-    for model_class in model_classes:
-        ct = ContentType.objects.get_for_model(model_class)
-        model_ct_map[ct.pk] = model_class
+        # Build a set of content_type_ids we care about
+        model_ct_map = {}  # content_type_id -> model_class
+        for model_class in model_classes:
+            ct = ContentType.objects.get_for_model(model_class)
+            model_ct_map[ct.pk] = model_class
+    except (OperationalError, ProgrammingError):
+        logger.warning(
+            "netbox_custom_objects_tab: database unavailable — typed tabs not registered. "
+            "Restart NetBox once the database is ready."
+        )
+        return
 
     for (ct_id, cot_pk), field_infos in ct_cot_fields.items():
         if ct_id not in model_ct_map:
