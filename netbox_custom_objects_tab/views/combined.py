@@ -3,15 +3,14 @@ from types import SimpleNamespace
 from urllib.parse import urlencode
 
 import django_tables2 as tables2
-from django.apps import apps
 from django.contrib.contenttypes.models import ContentType
 from django.core.paginator import InvalidPage
 from django.shortcuts import get_object_or_404, render
 from django.utils.translation import gettext_lazy as _
 from django.views.generic import View
 from extras.choices import CustomFieldTypeChoices
-from netbox.plugins import get_plugin_config
 from netbox.tables import BaseTable
+from netbox_custom_objects.models import CustomObjectTypeField
 from utilities.htmx import htmx_partial
 from utilities.paginator import EnhancedPaginator, get_paginate_count
 from utilities.views import ViewTab, register_model_view
@@ -49,7 +48,6 @@ def _get_linked_custom_objects(instance):
     Mirrors the query logic in:
       netbox_custom_objects/template_content.py::CustomObjectLink.left_page()
     """
-    from netbox_custom_objects.models import CustomObjectTypeField
 
     content_type = ContentType.objects.get_for_model(instance._meta.model)
     fields = CustomObjectTypeField.objects.filter(
@@ -87,7 +85,6 @@ def _count_linked_custom_objects(instance):
     Uses COUNT(*) per queryset — avoids fetching full object rows on every detail page.
     Returns None (not 0) when count is zero so hide_if_empty=True works correctly.
     """
-    from netbox_custom_objects.models import CustomObjectTypeField
 
     content_type = ContentType.objects.get_for_model(instance._meta.model)
     fields = CustomObjectTypeField.objects.filter(
@@ -304,12 +301,12 @@ def _make_tab_view(model_class, label="Custom Objects", weight=2000):
             if htmx_partial(request):
                 return render(
                     request,
-                    "netbox_custom_objects_tab/custom_objects_tab_partial.html",
+                    "netbox_custom_objects_tab/combined/tab_partial.html",
                     context,
                 )
             return render(
                 request,
-                "netbox_custom_objects_tab/custom_objects_tab.html",
+                "netbox_custom_objects_tab/combined/tab.html",
                 context,
             )
 
@@ -318,55 +315,21 @@ def _make_tab_view(model_class, label="Custom Objects", weight=2000):
     return _TabView
 
 
-def register_tabs():
+def register_combined_tabs(model_classes, label, weight):
     """
-    Programmatically register a Custom Objects tab view for each model listed
-    in the plugin's 'models' setting. Called from AppConfig.ready().
+    Register a combined Custom Objects tab view for each model in the list.
     """
-    try:
-        model_labels = get_plugin_config("netbox_custom_objects_tab", "models")
-        tab_label = get_plugin_config("netbox_custom_objects_tab", "label")
-        tab_weight = get_plugin_config("netbox_custom_objects_tab", "weight")
-    except Exception:
-        logger.exception("Could not read netbox_custom_objects_tab plugin config")
-        return
-
-    for model_label in model_labels:
-        model_label = model_label.lower()
-        if model_label.endswith(".*"):
-            app_label = model_label[:-2]
-            try:
-                model_classes = list(apps.get_app_config(app_label).get_models())
-            except LookupError:
-                logger.warning(
-                    "netbox_custom_objects_tab: could not find app %r — skipping",
-                    app_label,
-                )
-                continue
-        else:
-            try:
-                app_label, model_name = model_label.split(".", 1)
-                model_classes = [apps.get_model(app_label, model_name)]
-            except (ValueError, LookupError):
-                logger.warning(
-                    "netbox_custom_objects_tab: could not find model %r — skipping",
-                    model_label,
-                )
-                continue
-
-        for model_class in model_classes:
-            app_label = model_class._meta.app_label
-            model_name = model_class._meta.model_name
-            view_class = _make_tab_view(model_class, label=tab_label, weight=tab_weight)
-            # Programmatic equivalent of:
-            #   @register_model_view(model_class, name='custom_objects', path='custom-objects')
-            register_model_view(
-                model_class,
-                name="custom_objects",
-                path="custom-objects",
-            )(view_class)
-            logger.debug(
-                "netbox_custom_objects_tab: registered tab for %s.%s",
-                app_label,
-                model_name,
-            )
+    for model_class in model_classes:
+        app_label = model_class._meta.app_label
+        model_name = model_class._meta.model_name
+        view_class = _make_tab_view(model_class, label=label, weight=weight)
+        register_model_view(
+            model_class,
+            name="custom_objects",
+            path="custom-objects",
+        )(view_class)
+        logger.debug(
+            "netbox_custom_objects_tab: registered combined tab for %s.%s",
+            app_label,
+            model_name,
+        )
