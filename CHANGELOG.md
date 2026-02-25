@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.0.0b1] - 2026-02-25
+## [2.0.1] - 2026-02-25
 
 ### Added
 
@@ -25,6 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Handle missing database during startup — `register_typed_tabs()` now catches
+  `OperationalError` and `ProgrammingError` so NetBox can start even when the database
+  is unavailable or migrations haven't run yet.
 - Bulk action return URL in typed tabs — uses query parameter `?return_url=` on `formaction`
   for reliable redirect.
 
