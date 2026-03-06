@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.2] - 2026-03-06
+
+### Fixed
+
+- **TypeError on typed tab** — removed `user=` keyword argument from `CustomObjectTable`
+  instantiation. `django_tables2.Table.__init__` does not accept this kwarg; it was
+  redundant because `table.configure(request)` already applies per-user column preferences.
+  Fixes crash on NetBox 4.5.4-Docker (`netbox_custom_objects` 0.4.6).
+
+### Changed
+
+- Plugin version is now defined only in `pyproject.toml` and read at runtime via
+  `importlib.metadata.version()`, eliminating the duplicate version string in `__init__.py`.
+
 ## [2.0.1] - 2026-02-25
 
 ### Added
