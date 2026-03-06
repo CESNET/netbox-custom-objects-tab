@@ -29,5 +29,5 @@ db.sqlite3
 *.swo
 
 tools/
-
 ignore/
+.claude/
