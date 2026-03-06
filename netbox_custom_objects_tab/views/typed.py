@@ -203,7 +203,7 @@ def _make_typed_tab_view(model_class, custom_object_type, field_infos, weight):
 
             # Build table class and instantiate
             table_class = _build_typed_table_class(cot, dynamic_model)
-            table = table_class(filtered_qs, user=request.user)
+            table = table_class(filtered_qs)
             table.columns.show("pk")
 
             # Shadow @cached_property to avoid reverse error for dynamic models
