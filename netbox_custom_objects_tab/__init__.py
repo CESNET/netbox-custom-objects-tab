@@ -1,3 +1,5 @@
+from importlib.metadata import version
+
 from netbox.plugins import PluginConfig
 
 
@@ -5,7 +7,7 @@ class NetBoxCustomObjectsTabConfig(PluginConfig):
     name = "netbox_custom_objects_tab"
     verbose_name = "Custom Objects Tab"
     description = 'Adds a "Custom Objects" tab to NetBox object detail pages'
-    version = "2.0.1"
+    version = version("netbox-custom-objects-tab")
     author = "Jan Krupa"
     author_email = "jan.krupa@cesnet.cz"
     base_url = "custom-objects-tab"
