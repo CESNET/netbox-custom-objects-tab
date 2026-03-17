@@ -162,6 +162,7 @@ def _make_typed_tab_view(model_class, custom_object_type, field_infos, weight):
                 "tab": self.tab,
                 "base_template": _get_base_template(instance),
                 "table": None,
+                "preferences": {"pagination.placement": "bottom"},
             }
             try:
                 cot = COTModel.objects.get(pk=cot_pk)

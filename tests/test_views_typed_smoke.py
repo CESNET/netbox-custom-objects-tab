@@ -3,7 +3,6 @@ Smoke/unit tests for netbox_custom_objects_tab.views.typed.
 """
 
 import logging
-from collections import defaultdict
 from unittest.mock import MagicMock, patch
 
 from extras.choices import CustomFieldTypeChoices, CustomFieldUIVisibleChoices
@@ -130,7 +129,11 @@ class TestBuildTypedTableClass:
         }):
             cot, model = self._make_cot_and_model([
                 {"name": "visible_field", "type": CustomFieldTypeChoices.TYPE_TEXT, "ui_visible": "visible"},
-                {"name": "hidden_field", "type": CustomFieldTypeChoices.TYPE_TEXT, "ui_visible": CustomFieldUIVisibleChoices.HIDDEN},
+                {
+                    "name": "hidden_field",
+                    "type": CustomFieldTypeChoices.TYPE_TEXT,
+                    "ui_visible": CustomFieldUIVisibleChoices.HIDDEN,
+                },
             ])
             table_cls = _build_typed_table_class(cot, model)
 
@@ -217,6 +220,7 @@ class TestBuildFiltersetForm:
 
     def test_inherits_from_netbox_model_filter_set_form(self):
         from netbox.forms import NetBoxModelFilterSetForm
+
         from netbox_custom_objects_tab.views.typed import _build_filterset_form
 
         cot, model = self._make_cot_and_model([])

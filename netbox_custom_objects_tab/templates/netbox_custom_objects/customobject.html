@@ -11,150 +11,150 @@
 {% load custom_object_utils %}
 {% block extra_controls %}{% endblock %}
 {% block breadcrumbs %}
-  <li class="breadcrumb-item">
-    <a href="{{ object.get_list_url }}">{{ object.custom_object_type.get_verbose_name_plural }}</a>
-  </li>
-  <li class="breadcrumb-item">
-    <a href="{{ object.custom_object_type.get_absolute_url }}">{{ object.custom_object_type }}</a>
-  </li>
+    <li class="breadcrumb-item">
+        <a href="{{ object.get_list_url }}">{{ object.custom_object_type.get_verbose_name_plural }}</a>
+    </li>
+    <li class="breadcrumb-item">
+        <a href="{{ object.custom_object_type.get_absolute_url }}">{{ object.custom_object_type }}</a>
+    </li>
 {% endblock breadcrumbs %}
 {% block object_identifier %}
-  {{ object|meta:"app_label" }}.{{ object.custom_object_type.slug }}:{{ object.pk }}
-  {% if object.slug %}({{ object.slug }}){% endif %}
+    {{ object|meta:"app_label" }}.{{ object.custom_object_type.slug }}:{{ object.pk }}
+    {% if object.slug %}({{ object.slug }}){% endif %}
 {% endblock object_identifier %}
 {% block title %}
-  {{ object }}
+    {{ object }}
 {% endblock title %}
 {% block subtitle %}
-  <div class="text-secondary fs-5">
-    {% trans "Created" %} {{ object.created|isodatetime:"minutes" }}
-    {% if object.last_updated %}
-      <span class="separator">·</span>
-      {% trans "Updated" %} {{ object.last_updated|isodatetime:"minutes" }}
-    {% endif %}
-  </div>
+    <div class="text-secondary fs-5">
+        {% trans "Created" %} {{ object.created|isodatetime:"minutes" }}
+        {% if object.last_updated %}
+            <span class="separator">·</span>
+            {% trans "Updated" %} {{ object.last_updated|isodatetime:"minutes" }}
+        {% endif %}
+    </div>
 {% endblock subtitle %}
 {% block controls %}
-  <div class="btn-list justify-content-end mb-2">
-    {% block control-buttons %}
-      {# Default buttons #}
-      {% if perms.extras.add_bookmark and object.bookmarks %}
-        {% custom_object_bookmark_button object %}
-      {% endif %}
-      {% if perms.extras.add_subscription and object.subscriptions %}
-        {% custom_object_subscribe_button object %}
-      {% endif %}
-      {% if request.user|can_add:object %}
-        {% custom_object_clone_button object %}
-      {% endif %}
-      {% if request.user|can_change:object %}
-        {% custom_object_edit_button object %}
-      {% endif %}
-      {% if request.user|can_delete:object %}
-        {% custom_object_delete_button object %}
-      {% endif %}
-    {% endblock %}
-  </div>
-  {# Custom links #}
-  <div class="d-flex justify-content-end">
-    <div class="btn-list">
-      {% block custom-links %}
-        {% custom_links object %}
-      {% endblock custom-links %}
+    <div class="btn-list justify-content-end mb-2">
+        {% block control-buttons %}
+            {# Default buttons #}
+            {% if perms.extras.add_bookmark and object.bookmarks %}
+                {% custom_object_bookmark_button object %}
+            {% endif %}
+            {% if perms.extras.add_subscription and object.subscriptions %}
+                {% custom_object_subscribe_button object %}
+            {% endif %}
+            {% if request.user|can_add:object %}
+                {% custom_object_clone_button object %}
+            {% endif %}
+            {% if request.user|can_change:object %}
+                {% custom_object_edit_button object %}
+            {% endif %}
+            {% if request.user|can_delete:object %}
+                {% custom_object_delete_button object %}
+            {% endif %}
+        {% endblock %}
     </div>
-  </div>
+    {# Custom links #}
+    <div class="d-flex justify-content-end">
+        <div class="btn-list">
+            {% block custom-links %}
+                {% custom_links object %}
+            {% endblock custom-links %}
+        </div>
+    </div>
 {% endblock controls %}
 {% block tabs %}
-  <ul class="nav nav-tabs" role="presentation">
-    {# Primary tab #}
-    <li class="nav-item">
-      <a class="nav-link{% if not tab %} active{% endif %}"
-         href="{{ object.get_absolute_url }}">{{ object.custom_object_type.get_verbose_name }}</a>
-    </li>
-    {# All other tabs (Journal, Changelog, Custom Objects, typed tabs) come from the registry #}
-    {% model_view_tabs object %}
-  </ul>
+    <ul class="nav nav-tabs" role="presentation">
+        {# Primary tab #}
+        <li class="nav-item">
+            <a class="nav-link{% if not tab %} active{% endif %}"
+               href="{{ object.get_absolute_url }}">{{ object.custom_object_type.get_verbose_name }}</a>
+        </li>
+        {# All other tabs (Journal, Changelog, Custom Objects, typed tabs) come from the registry #}
+        {% model_view_tabs object %}
+    </ul>
 {% endblock tabs %}
 {% block content %}
-  <div class="row">
-    <div class="col col-md-6">
-      <div class="card">
-        <table class="table table-hover attr-table">
-          <tr>
-            <th scope="row">{% trans "Type" %}</th>
-            <td>{{ object.custom_object_type|linkify:"display_name" }}</td>
-          </tr>
-          <tr>
-            <th scope="row">{% trans "Last activity" %}</th>
-            <td>
-              {{ latest_change.time|isodatetime|placeholder }}
-              {% if latest_change %}
-                <div class="small text-muted">{{ latest_change.time|timesince }} {% trans "ago" %}</div>
-              {% endif %}
-            </td>
-          </tr>
-          {% for group_name, group_fields in field_groups.items %}
-            {% if group_name %}
-              <tr class="table-group-header">
-                <th scope="row" colspan="2" class="fw-bold">{{ group_name }}</th>
-              </tr>
-            {% endif %}
-            {% for field in group_fields %}
-              {% with is_visible_in_ui=object|get_field_is_ui_visible:field %}
-                {% if field.is_single_value and is_visible_in_ui %}
-                  <tr>
-                    <th scope="row">
-                      {{ field }}
-                      {% if field.description %}
-                        <i class="mdi mdi-information text-primary"
-                           data-bs-toggle="tooltip"
-                           data-bs-placement="right"
-                           title="{{ field.description|escape }}"></i>
-                      {% endif %}
-                    </th>
-                    <td>
-                      {% with customfield=field value=object|get_field_value:field %}
-                        {% include "builtins/customfield_value.html" %}
-                      {% endwith %}
-                    </td>
-                  </tr>
-                {% endif %}
-              {% endwith %}
-            {% endfor %}
-          {% endfor %}
-        </table>
-      </div>
-      {% plugin_left_page object %}
-    </div>
-    <div class="col col-md-6">
-      {% include 'inc/panels/tags.html' %}
-      {% plugin_right_page object %}
-      {% for group_name, group_fields in field_groups.items %}
-        {% for field in group_fields %}
-          {% if field.many %}
-            {% with field_values=object|get_child_relations:field is_visible_in_ui=object|get_field_is_ui_visible:field %}
-              {% if is_visible_in_ui %}
-                <div class="card">
-                  <h2 class="card-header">
-                    {% if group_name %}{{ group_name }}:{% endif %}
-                    {{ field }}
-                  </h2>
-                  <table class="table table-hover attr-table">
-                    {% for relation in field_values.all %}
-                      <tr>
-                        <th scope="row">{{ relation|linkify }}</th>
-                      </tr>
+    <div class="row">
+        <div class="col col-md-6">
+            <div class="card">
+                <table class="table table-hover attr-table">
+                    <tr>
+                        <th scope="row">{% trans "Type" %}</th>
+                        <td>{{ object.custom_object_type|linkify:"display_name" }}</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">{% trans "Last activity" %}</th>
+                        <td>
+                            {{ latest_change.time|isodatetime|placeholder }}
+                            {% if latest_change %}
+                                <div class="small text-muted">{{ latest_change.time|timesince }} {% trans "ago" %}</div>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% for group_name, group_fields in field_groups.items %}
+                        {% if group_name %}
+                            <tr class="table-group-header">
+                                <th scope="row" colspan="2" class="fw-bold">{{ group_name }}</th>
+                            </tr>
+                        {% endif %}
+                        {% for field in group_fields %}
+                            {% with is_visible_in_ui=object|get_field_is_ui_visible:field %}
+                                {% if field.is_single_value and is_visible_in_ui %}
+                                    <tr>
+                                        <th scope="row">
+                                            {{ field }}
+                                            {% if field.description %}
+                                                <i class="mdi mdi-information text-primary"
+                                                   data-bs-toggle="tooltip"
+                                                   data-bs-placement="right"
+                                                   title="{{ field.description|escape }}"></i>
+                                            {% endif %}
+                                        </th>
+                                        <td>
+                                            {% with customfield=field value=object|get_field_value:field %}
+                                                {% include "builtins/customfield_value.html" %}
+                                            {% endwith %}
+                                        </td>
+                                    </tr>
+                                {% endif %}
+                            {% endwith %}
+                        {% endfor %}
                     {% endfor %}
-                  </table>
-                </div>
-              {% endif %}
-            {% endwith %}
-          {% endif %}
-        {% endfor %}
-      {% endfor %}
+                </table>
+            </div>
+            {% plugin_left_page object %}
+        </div>
+        <div class="col col-md-6">
+            {% include 'inc/panels/tags.html' %}
+            {% plugin_right_page object %}
+            {% for group_name, group_fields in field_groups.items %}
+                {% for field in group_fields %}
+                    {% if field.many %}
+                        {% with field_values=object|get_child_relations:field is_visible_in_ui=object|get_field_is_ui_visible:field %}
+                            {% if is_visible_in_ui %}
+                                <div class="card">
+                                    <h2 class="card-header">
+                                        {% if group_name %}{{ group_name }}:{% endif %}
+                                        {{ field }}
+                                    </h2>
+                                    <table class="table table-hover attr-table">
+                                        {% for relation in field_values.all %}
+                                            <tr>
+                                                <th scope="row">{{ relation|linkify }}</th>
+                                            </tr>
+                                        {% endfor %}
+                                    </table>
+                                </div>
+                            {% endif %}
+                        {% endwith %}
+                    {% endif %}
+                {% endfor %}
+            {% endfor %}
+        </div>
     </div>
-  </div>
-  <div class="row mb-3">
-    <div class="col col-md-12">{% plugin_full_width_page object %}</div>
-  </div>
+    <div class="row mb-3">
+        <div class="col col-md-12">{% plugin_full_width_page object %}</div>
+    </div>
 {% endblock %}
