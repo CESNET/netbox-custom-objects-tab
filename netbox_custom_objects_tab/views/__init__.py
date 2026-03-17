@@ -1,4 +1,5 @@
 import logging
+import threading
 
 from django.apps import apps
 from netbox.plugins import get_plugin_config
@@ -8,6 +9,18 @@ from .combined import register_combined_tabs
 from .typed import register_typed_tabs
 
 logger = logging.getLogger("netbox_custom_objects_tab")
+
+# ── Deferred initialisation (avoids DB queries during ready()) ───────────
+# Typed-tab registration queries CustomObjectTypeField and ContentType.
+# Running those queries in AppConfig.ready() triggers warnings from Django
+# ("Accessing the database during app initialization is discouraged") and
+# from netbox_branching ("Routing database query … before branching support
+# is initialized").  We defer that work to the first HTTP request via
+# Django's request_started signal.  See GitHub issue #4.
+
+_deferred_init_lock = threading.Lock()
+_deferred_init_done = False
+_deferred_config = {}  # populated in register_tabs(), consumed in _deferred_typed_init()
 
 
 def _resolve_dynamic_custom_object_models():
@@ -162,10 +175,52 @@ def _deduplicate_registry():
                 model_map[model_name] = deduped
 
 
+def _deferred_typed_init(sender=None, **kwargs):
+    """
+    One-shot ``request_started`` handler that performs DB-dependent initialisation.
+
+    Registers typed tabs, injects CO URL patterns, and deduplicates the view
+    registry.  Runs exactly once on the first HTTP request, then disconnects
+    itself so subsequent requests pay no overhead.
+    """
+    global _deferred_init_done
+    with _deferred_init_lock:
+        if _deferred_init_done:
+            return
+        _deferred_init_done = True
+
+    from django.core.signals import request_started
+
+    request_started.disconnect(_deferred_typed_init, dispatch_uid="netbox_custom_objects_tab_deferred")
+
+    config = _deferred_config
+    combined_models = config.get("combined_models", [])
+    typed_labels = config.get("typed_labels", [])
+    typed_weight = config.get("typed_weight", 2100)
+
+    typed_models = []
+    if typed_labels:
+        typed_models = _resolve_model_labels(typed_labels)
+        register_typed_tabs(typed_models, typed_weight)
+
+    # Inject URL patterns for CO dynamic models (combined + typed).
+    if any(m._meta.app_label == _CUSTOM_OBJECTS_APP for m in combined_models + typed_models):
+        _inject_co_urls()
+
+    # Deduplicate the registry — netbox_custom_objects re-registers journal/changelog
+    # on every get_model() cache miss, producing duplicate tabs.
+    _deduplicate_registry()
+
+
 def register_tabs():
     """
     Read plugin config and register both combined and typed tabs.
     Called from AppConfig.ready().
+
+    Combined tabs are registered immediately (no DB queries needed).
+    Typed tabs and other DB-dependent work are deferred to the first HTTP
+    request via the ``request_started`` signal to avoid DB access during
+    app initialisation (GitHub issue #4).
     """
     try:
         combined_labels = get_plugin_config("netbox_custom_objects_tab", "combined_models")
@@ -177,21 +232,22 @@ def register_tabs():
         logger.exception("Could not read netbox_custom_objects_tab plugin config")
         return
 
+    # Phase 1 — immediate: combined tabs do not query the database.
     combined_models = []
     if combined_labels:
         combined_models = _resolve_model_labels(combined_labels)
         register_combined_tabs(combined_models, combined_label, combined_weight)
 
-    typed_models = []
-    if typed_labels:
-        typed_models = _resolve_model_labels(typed_labels)
-        register_typed_tabs(typed_models, typed_weight)
+    # Phase 2 — deferred: typed tabs, CO URL injection, and registry dedup
+    # all require DB access and must wait until the first request.
+    _deferred_config.update(
+        {
+            "combined_models": combined_models,
+            "typed_labels": typed_labels,
+            "typed_weight": typed_weight,
+        }
+    )
 
-    # For any CO dynamic models we registered tabs for, inject URL patterns into
-    # netbox_custom_objects.urls so that tab URL reversal works.
-    if any(m._meta.app_label == _CUSTOM_OBJECTS_APP for m in combined_models + typed_models):
-        _inject_co_urls()
+    from django.core.signals import request_started
 
-    # Deduplicate the registry — netbox_custom_objects re-registers journal/changelog
-    # on every get_model() cache miss, producing duplicate tabs.
-    _deduplicate_registry()
+    request_started.connect(_deferred_typed_init, dispatch_uid="netbox_custom_objects_tab_deferred")
