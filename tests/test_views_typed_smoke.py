@@ -3,7 +3,6 @@ Smoke/unit tests for netbox_custom_objects_tab.views.typed.
 """
 
 import logging
-from collections import defaultdict
 from unittest.mock import MagicMock, patch
 
 from extras.choices import CustomFieldTypeChoices, CustomFieldUIVisibleChoices
@@ -130,7 +129,11 @@ class TestBuildTypedTableClass:
         }):
             cot, model = self._make_cot_and_model([
                 {"name": "visible_field", "type": CustomFieldTypeChoices.TYPE_TEXT, "ui_visible": "visible"},
-                {"name": "hidden_field", "type": CustomFieldTypeChoices.TYPE_TEXT, "ui_visible": CustomFieldUIVisibleChoices.HIDDEN},
+                {
+                    "name": "hidden_field",
+                    "type": CustomFieldTypeChoices.TYPE_TEXT,
+                    "ui_visible": CustomFieldUIVisibleChoices.HIDDEN,
+                },
             ])
             table_cls = _build_typed_table_class(cot, model)
 
@@ -217,6 +220,7 @@ class TestBuildFiltersetForm:
 
     def test_inherits_from_netbox_model_filter_set_form(self):
         from netbox.forms import NetBoxModelFilterSetForm
+
         from netbox_custom_objects_tab.views.typed import _build_filterset_form
 
         cot, model = self._make_cot_and_model([])
@@ -370,3 +374,28 @@ class TestRegisterTypedTabs:
             register_typed_tabs([model_class], weight=2100)
 
         mock_register.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# _get_base_template
+# ---------------------------------------------------------------------------
+class TestGetBaseTemplate:
+    def _make_instance(self, app_label, model_name):
+        from unittest.mock import MagicMock
+
+        instance = MagicMock()
+        instance._meta.app_label = app_label
+        instance._meta.model_name = model_name
+        return instance
+
+    def test_co_model_returns_shared_template(self):
+        from netbox_custom_objects_tab.views.typed import _CO_BASE_TEMPLATE, _get_base_template
+
+        instance = self._make_instance("netbox_custom_objects", "table28model")
+        assert _get_base_template(instance) == _CO_BASE_TEMPLATE
+
+    def test_non_co_model_returns_per_model_template(self):
+        from netbox_custom_objects_tab.views.typed import _get_base_template
+
+        instance = self._make_instance("dcim", "device")
+        assert _get_base_template(instance) == "dcim/device.html"

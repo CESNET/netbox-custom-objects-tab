@@ -33,8 +33,9 @@ class NetBoxCustomObjectsTabConfig(PluginConfig):
 
     def ready(self):
         super().ready()
-        from . import views
+        from . import template_override, views
 
+        template_override.install()
         views.register_tabs()
 
 

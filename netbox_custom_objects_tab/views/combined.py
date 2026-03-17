@@ -15,6 +15,8 @@ from utilities.htmx import htmx_partial
 from utilities.paginator import EnhancedPaginator, get_paginate_count
 from utilities.views import ViewTab, register_model_view
 
+from ._co_common import _CUSTOM_OBJECTS_APP, _get_base_template
+
 logger = logging.getLogger("netbox_custom_objects_tab")
 
 
@@ -40,42 +42,36 @@ class CustomObjectsTabTable(BaseTable):
 _MAX_MULTIOBJECT_DISPLAY = 3
 
 
-def _get_linked_custom_objects(instance):
-    """
-    Return list of (custom_object_instance, CustomObjectTypeField) tuples for all
-    custom objects that reference this instance via OBJECT or MULTIOBJECT fields.
-
-    Mirrors the query logic in:
-      netbox_custom_objects/template_content.py::CustomObjectLink.left_page()
-    """
-
+def _iter_linked_fields(instance):
+    """Yield (field, model, filter_kwargs) for every CO field referencing instance."""
     content_type = ContentType.objects.get_for_model(instance._meta.model)
     fields = CustomObjectTypeField.objects.filter(
         related_object_type=content_type,
-        type__in=[
-            CustomFieldTypeChoices.TYPE_OBJECT,
-            CustomFieldTypeChoices.TYPE_MULTIOBJECT,
-        ],
+        type__in=[CustomFieldTypeChoices.TYPE_OBJECT, CustomFieldTypeChoices.TYPE_MULTIOBJECT],
     ).select_related("custom_object_type")
 
-    results = []
     for field in fields:
         try:
             model = field.custom_object_type.get_model()
         except Exception:
-            logger.exception(
-                "Could not get model for CustomObjectType %s",
-                field.custom_object_type_id,
-            )
+            logger.exception("Could not get model for CustomObjectType %s", field.custom_object_type_id)
             continue
 
         if field.type == CustomFieldTypeChoices.TYPE_OBJECT:
-            for obj in model.objects.filter(**{f"{field.name}_id": instance.pk}).prefetch_related("tags"):
-                results.append((obj, field))
+            yield field, model, {f"{field.name}_id": instance.pk}
         elif field.type == CustomFieldTypeChoices.TYPE_MULTIOBJECT:
-            for obj in model.objects.filter(**{field.name: instance.pk}).prefetch_related("tags"):
-                results.append((obj, field))
+            yield field, model, {field.name: instance.pk}
 
+
+def _get_linked_custom_objects(instance):
+    """
+    Return list of (custom_object_instance, CustomObjectTypeField) tuples for all
+    custom objects that reference this instance via OBJECT or MULTIOBJECT fields.
+    """
+    results = []
+    for field, model, filter_kwargs in _iter_linked_fields(instance):
+        for obj in model.objects.filter(**filter_kwargs).prefetch_related("tags"):
+            results.append((obj, field))
     return results
 
 
@@ -85,32 +81,9 @@ def _count_linked_custom_objects(instance):
     Uses COUNT(*) per queryset — avoids fetching full object rows on every detail page.
     Returns None (not 0) when count is zero so hide_if_empty=True works correctly.
     """
-
-    content_type = ContentType.objects.get_for_model(instance._meta.model)
-    fields = CustomObjectTypeField.objects.filter(
-        related_object_type=content_type,
-        type__in=[
-            CustomFieldTypeChoices.TYPE_OBJECT,
-            CustomFieldTypeChoices.TYPE_MULTIOBJECT,
-        ],
-    ).select_related("custom_object_type")
-
     total = 0
-    for field in fields:
-        try:
-            model = field.custom_object_type.get_model()
-        except Exception:
-            logger.exception(
-                "Could not get model for CustomObjectType %s",
-                field.custom_object_type_id,
-            )
-            continue
-
-        if field.type == CustomFieldTypeChoices.TYPE_OBJECT:
-            total += model.objects.filter(**{f"{field.name}_id": instance.pk}).count()
-        elif field.type == CustomFieldTypeChoices.TYPE_MULTIOBJECT:
-            total += model.objects.filter(**{field.name: instance.pk}).count()
-
+    for _field, model, filter_kwargs in _iter_linked_fields(instance):
+        total += model.objects.filter(**filter_kwargs).count()
     return total if total > 0 else None
 
 
@@ -191,11 +164,18 @@ def _make_tab_view(model_class, label="Custom Objects", weight=2000):
             hide_if_empty=True,
         )
 
-        def get(self, request, pk):
+        def get(self, request, pk, **kwargs):
+            actual_model = model_class
+            co_slug = kwargs.get("custom_object_type")
+            if co_slug and model_class._meta.app_label == _CUSTOM_OBJECTS_APP:
+                from netbox_custom_objects.models import CustomObjectType
+
+                cot = get_object_or_404(CustomObjectType, slug=co_slug)
+                actual_model = cot.get_model()
             try:
-                qs = model_class.objects.restrict(request.user, "view")
+                qs = actual_model.objects.restrict(request.user, "view")
             except AttributeError:
-                qs = model_class.objects.all()
+                qs = actual_model.objects.all()
 
             instance = get_object_or_404(qs, pk=pk)
             linked_all = _get_linked_custom_objects(instance)
@@ -280,7 +260,7 @@ def _make_tab_view(model_class, label="Custom Objects", weight=2000):
                 "tab": self.tab,
                 # base_template must match the parent model's detail template
                 # so that tabs, breadcrumbs, and the page header render correctly.
-                "base_template": (f"{instance._meta.app_label}/{instance._meta.model_name}.html"),
+                "base_template": _get_base_template(instance),
                 "page_obj": page,
                 "paginator": paginator,
                 "page_rows": page_rows,
@@ -319,9 +299,22 @@ def register_combined_tabs(model_classes, label, weight):
     """
     Register a combined Custom Objects tab view for each model in the list.
     """
+    from netbox.registry import registry
+
     for model_class in model_classes:
         app_label = model_class._meta.app_label
         model_name = model_class._meta.model_name
+
+        # Skip if already registered (idempotent — guards against reloader re-runs).
+        existing = registry["views"].get(app_label, {}).get(model_name, [])
+        if any(e["name"] == "custom_objects" for e in existing):
+            logger.debug(
+                "combined tab already registered for %s.%s — skipping",
+                app_label,
+                model_name,
+            )
+            continue
+
         view_class = _make_tab_view(model_class, label=label, weight=weight)
         register_model_view(
             model_class,
@@ -329,7 +322,7 @@ def register_combined_tabs(model_classes, label, weight):
             path="custom-objects",
         )(view_class)
         logger.debug(
-            "netbox_custom_objects_tab: registered combined tab for %s.%s",
+            "registered combined tab for %s.%s",
             app_label,
             model_name,
         )

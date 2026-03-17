@@ -1,4 +1,5 @@
 import logging
+from collections import defaultdict
 
 from django.contrib.contenttypes.models import ContentType
 from django.db.models import Q
@@ -7,12 +8,15 @@ from django.shortcuts import get_object_or_404, render
 from django.views.generic import View
 from extras.choices import CustomFieldTypeChoices, CustomFieldUIVisibleChoices
 from netbox.forms import NetBoxModelFilterSetForm
+from netbox.registry import registry
 from netbox_custom_objects import field_types
 from netbox_custom_objects.filtersets import get_filterset_class
 from netbox_custom_objects.models import CustomObjectTypeField
 from netbox_custom_objects.tables import CustomObjectTable
 from utilities.forms.fields import TagFilterField
 from utilities.views import ViewTab, register_model_view
+
+from ._co_common import _CO_BASE_TEMPLATE, _CUSTOM_OBJECTS_APP, _get_base_template  # noqa: F401
 
 logger = logging.getLogger("netbox_custom_objects_tab")
 
@@ -142,7 +146,7 @@ def _make_typed_tab_view(model_class, custom_object_type, field_infos, weight):
             hide_if_empty=True,
         )
 
-        def get(self, request, pk):
+        def get(self, request, pk, **kwargs):
             try:
                 qs = model_class.objects.restrict(request.user, "view")
             except AttributeError:
@@ -153,34 +157,23 @@ def _make_typed_tab_view(model_class, custom_object_type, field_infos, weight):
             # Re-fetch CustomObjectType at request time (may have changed since ready())
             from netbox_custom_objects.models import CustomObjectType as COTModel
 
+            error_context = {
+                "object": instance,
+                "tab": self.tab,
+                "base_template": _get_base_template(instance),
+                "table": None,
+                "preferences": {"pagination.placement": "bottom"},
+            }
             try:
                 cot = COTModel.objects.get(pk=cot_pk)
             except COTModel.DoesNotExist:
-                return render(
-                    request,
-                    "netbox_custom_objects_tab/typed/tab.html",
-                    {
-                        "object": instance,
-                        "tab": self.tab,
-                        "base_template": f"{instance._meta.app_label}/{instance._meta.model_name}.html",
-                        "table": None,
-                    },
-                )
+                return render(request, "netbox_custom_objects_tab/typed/tab.html", error_context)
 
             try:
                 dynamic_model = cot.get_model()
             except Exception:
                 logger.exception("Could not get model for CustomObjectType %s", cot_pk)
-                return render(
-                    request,
-                    "netbox_custom_objects_tab/typed/tab.html",
-                    {
-                        "object": instance,
-                        "tab": self.tab,
-                        "base_template": f"{instance._meta.app_label}/{instance._meta.model_name}.html",
-                        "table": None,
-                    },
-                )
+                return render(request, "netbox_custom_objects_tab/typed/tab.html", error_context)
 
             # Build base queryset: union of all field filters for this type
             q_filter = Q()
@@ -213,9 +206,8 @@ def _make_typed_tab_view(model_class, custom_object_type, field_infos, weight):
             table.configure(request)
 
             # User preferences for paginator placement
-            preferences = {}
             if request.user.is_authenticated and (userconfig := getattr(request.user, "config", None)):
-                preferences["pagination.placement"] = userconfig.get("pagination.placement", "bottom")
+                preferences = {"pagination.placement": userconfig.get("pagination.placement", "bottom")}
             else:
                 preferences = {"pagination.placement": "bottom"}
 
@@ -224,7 +216,7 @@ def _make_typed_tab_view(model_class, custom_object_type, field_infos, weight):
             context = {
                 "object": instance,
                 "tab": self.tab,
-                "base_template": f"{instance._meta.app_label}/{instance._meta.model_name}.html",
+                "base_template": _get_base_template(instance),
                 "table": table,
                 "filter_form": filter_form,
                 "return_url": return_url,
@@ -259,8 +251,6 @@ def register_typed_tabs(model_classes, weight):
 
         # Group by (content_type_id, custom_object_type_pk)
         # -> list of (field_name, field_type)
-        from collections import defaultdict
-
         ct_cot_fields = defaultdict(list)
         ct_cot_map = {}  # (ct_id, cot_pk) -> CustomObjectType
         for field in all_fields:
@@ -276,10 +266,7 @@ def register_typed_tabs(model_classes, weight):
             ct = ContentType.objects.get_for_model(model_class)
             model_ct_map[ct.pk] = model_class
     except (OperationalError, ProgrammingError):
-        logger.warning(
-            "netbox_custom_objects_tab: database unavailable — typed tabs not registered. "
-            "Restart NetBox once the database is ready."
-        )
+        logger.warning("database unavailable — typed tabs not registered. Restart NetBox once the database is ready.")
         return
 
     for (ct_id, cot_pk), field_infos in ct_cot_fields.items():
@@ -290,6 +277,17 @@ def register_typed_tabs(model_classes, weight):
         custom_object_type = ct_cot_map[(ct_id, cot_pk)]
         slug = custom_object_type.slug
 
+        # Skip if already registered (idempotent — guards against reloader re-runs).
+        existing = registry["views"].get(model_class._meta.app_label, {}).get(model_class._meta.model_name, [])
+        if any(e["name"] == f"custom_objects_{slug}" for e in existing):
+            logger.debug(
+                "typed tab '%s' already registered for %s.%s — skipping",
+                slug,
+                model_class._meta.app_label,
+                model_class._meta.model_name,
+            )
+            continue
+
         view_class = _make_typed_tab_view(model_class, custom_object_type, field_infos, weight)
         register_model_view(
             model_class,
@@ -297,7 +295,7 @@ def register_typed_tabs(model_classes, weight):
             path=f"custom-objects-{slug}",
         )(view_class)
         logger.debug(
-            "netbox_custom_objects_tab: registered typed tab '%s' for %s.%s",
+            "registered typed tab '%s' for %s.%s",
             slug,
             model_class._meta.app_label,
             model_class._meta.model_name,

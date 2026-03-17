@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-03-16
+
+### Added
+
+- **CO→CO tabs** — `netbox_custom_objects.*` is now a valid value for both `combined_models`
+  and `typed_models`. This enables tabs on Custom Object detail pages themselves: when
+  Custom Object Type A has a field (FK or M2M) pointing to Custom Object Type B, navigating
+  to a Type B instance shows a tab listing all Type A instances that reference it.
+  A NetBox restart is required whenever a new Custom Object Type is added (same requirement
+  as all typed tabs).
+- `template_override.py` — prepends our templates directory to Django's filesystem loader
+  at `ready()` time so that our `netbox_custom_objects/customobject.html` override (which
+  adds `{% model_view_tabs object %}`) is found before the original template.
+
+### Fixed
+
+- Tab views now accept `**kwargs` in their `get()` method, accommodating the extra
+  `custom_object_type` URL keyword argument present on Custom Object detail URLs.
+- `base_template` for Custom Object model instances now correctly resolves to
+  `netbox_custom_objects/customobject.html` instead of the nonexistent per-model template.
+- `_inject_co_urls()` appends the necessary URL patterns for CO tab views into
+  `netbox_custom_objects.urls` at startup, enabling URL reversal for registered tabs
+  (the `netbox_custom_objects` plugin uses a single generic view and never registers
+  per-model URL patterns for dynamic models).
+
 ## [2.0.2] - 2026-03-06
 
 ### Fixed

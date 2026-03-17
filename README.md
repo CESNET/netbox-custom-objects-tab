@@ -6,9 +6,11 @@
 [![NetBox](https://img.shields.io/badge/NetBox-4.5.x-blue)](https://github.com/netbox-community/netbox)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 
-A NetBox 4.5.x plugin that adds **Custom Objects** tabs to standard object detail pages,
+A NetBox 4.5.x plugin that adds **Custom Objects** tabs to object detail pages,
 showing Custom Object instances from the `netbox_custom_objects` plugin that reference
-those objects via OBJECT or MULTIOBJECT fields.
+those objects via OBJECT or MULTIOBJECT fields. Works on standard NetBox models (Device,
+Site, Rack, …), third-party plugin models, and Custom Object detail pages themselves
+(CO→CO relationships).
 
 Two tab modes are available:
 
@@ -31,6 +33,7 @@ Two tab modes are available:
 
 | Plugin version | NetBox version | `netbox_custom_objects` version |
 |----------------|----------------|---------------------------------|
+| 2.1.x          | 4.5.4+         | ≥ 0.4.6                        |
 | 2.0.x          | 4.5.x          | ≥ 0.4.6                        |
 | 1.0.x          | 4.5.x          | ≥ 0.4.4                        |
 
@@ -93,10 +96,28 @@ A model can appear in both `combined_models` and `typed_models` to get both tab 
 
 # Third-party plugin models work identically
 'combined_models': ['dcim.*', 'ipam.*', 'inventory_monitor.*']
+
+# Tabs on Custom Object detail pages (CO → CO relationships)
+'typed_models': ['netbox_custom_objects.*']
+
+# Combined tab on Custom Object pages + typed tabs on Device pages
+'combined_models': ['dcim.*', 'netbox_custom_objects.*'],
+'typed_models': ['dcim.*', 'netbox_custom_objects.*'],
 ```
 
 Third-party plugin models are fully supported — Django treats plugin apps and built-in apps
 the same way in the app registry. Add the plugin's app label and restart NetBox once.
+
+#### Tabs on Custom Object detail pages
+
+Setting `netbox_custom_objects.*` in `combined_models` or `typed_models` enables tabs on
+Custom Object detail pages themselves. This is useful when one Custom Object Type has a
+field referencing another Custom Object Type — the referenced object will show a tab listing
+all objects that link to it.
+
+Because Custom Object model classes are generated dynamically (one per type, on-demand),
+**a NetBox restart is required whenever a new Custom Object Type is added** — the same
+requirement that applies to all typed tabs.
 
 The tab is hidden automatically (`hide_if_empty=True`) when no custom objects reference
 the object being viewed, so it only appears when relevant.
