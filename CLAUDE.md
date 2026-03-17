@@ -42,14 +42,16 @@ Both modes coexist. Config variables control which models get which behavior.
 
 | File | Role |
 |------|------|
-| `netbox_custom_objects_tab/__init__.py` | `PluginConfig`; calls `views.register_tabs()` in `ready()` |
-| `netbox_custom_objects_tab/views/__init__.py` | `register_tabs()` + `_resolve_model_labels()` helper |
+| `netbox_custom_objects_tab/__init__.py` | `PluginConfig`; calls `template_override.install()` then `views.register_tabs()` in `ready()` |
+| `netbox_custom_objects_tab/template_override.py` | Prepends our `templates/` dir to `engine.dirs` so CO detail template override is found first |
+| `netbox_custom_objects_tab/views/__init__.py` | `register_tabs()` + `_resolve_model_labels()` + `_inject_co_urls()` |
 | `netbox_custom_objects_tab/views/combined.py` | Combined-tab view factory + helpers |
 | `netbox_custom_objects_tab/views/typed.py` | Per-type tab view factory + dynamic table/filterset builders |
 | `netbox_custom_objects_tab/urls.py` | Empty `urlpatterns` (required by NetBox plugin loader) |
 | `templates/.../combined/tab.html` | Combined tab full page (extends base_template) |
 | `templates/.../combined/tab_partial.html` | Combined tab HTMX zone (no extends) |
 | `templates/.../typed/tab.html` | Typed tab full page (extends base_template, mirrors `generic/object_list.html`) |
+| `templates/netbox_custom_objects/customobject.html` | Override of CO detail template — adds `{% model_view_tabs object %}` to the hardcoded tabs block |
 
 ## Config Design
 
@@ -153,6 +155,33 @@ Key functions in `views/typed.py`:
 HTMX for typed tabs: the view returns `htmx/table.html` (NetBox standard) for HTMX requests.
 No custom partial needed — `table.configure(request)` handles pagination and ordering.
 
+## CO→CO Tab Support (`netbox_custom_objects.*`)
+
+Setting `netbox_custom_objects.*` in `combined_models` or `typed_models` enables tabs on
+Custom Object detail pages themselves (e.g. Type A has a FK to Type B → Type B's detail page
+shows a tab of Type A instances).
+
+Three non-obvious problems had to be solved:
+
+1. **Model resolution** — dynamic per-type models (e.g. `Table28Model`) are not returned by
+   `apps.get_app_config().get_models()` unless already registered. `_resolve_model_labels()`
+   special-cases `netbox_custom_objects.*` to read `CustomObject` subclasses from
+   `app_config.get_models()` (safe after `netbox_custom_objects.ready()` has run).
+   **Never call `get_model()` here** — it re-registers journal/changelog views on cache miss.
+
+2. **URL patterns** — `netbox_custom_objects` serves all CO detail pages via one generic
+   `CustomObjectView` and never calls `get_model_urls()` for dynamic models. Our tab views
+   are registered in `registry['views']` but have no corresponding URL patterns, so
+   `get_action_url()` throws `NoReverseMatch` (silently skipped by the template tag).
+   `_inject_co_urls()` appends patterns like
+   `<str:custom_object_type>/<int:pk>/custom-objects-{slug}/` to
+   `netbox_custom_objects.urls.urlpatterns` at `ready()` time.
+
+3. **Template** — `netbox_custom_objects/customobject.html` has a hardcoded `{% block tabs %}`
+   with no `{% model_view_tabs object %}` call. `template_override.install()` prepends our
+   `templates/` directory to `engine.dirs` so our copy of the template (with the call added)
+   is found first by the filesystem loader.
+
 ## Permission Checks in Template
 
 Combined tab uses inline `<a>` buttons with `can_change`/`can_delete` filters (see combined templates).
@@ -179,7 +208,12 @@ permissions internally via `get_permission_for_model()`.
   error for dynamic models)
 - Typed tabs use `custom-objects-{slug}` path prefix — avoids collisions with built-in paths
 - Multiple fields of same type → union querysets with `.distinct()`
-- Tabs registered at `ready()` — new Custom Object Types need a restart
+- Tabs registered at `ready()` — new Custom Object Types need a restart (applies both to typed tabs on native models and to `netbox_custom_objects.*` tabs on Custom Object pages)
+- `netbox_custom_objects.*` wildcard is special-cased in `_resolve_model_labels()` — dynamic models are discovered via `app_config.get_models()` filtered to `CustomObject` subclasses. **Do NOT call `get_model()` here** — each cache-miss call re-registers journal/changelog tab views, producing duplicate tabs
+- `base_template` for CO model instances must be `netbox_custom_objects/customobject.html` — the per-model template (e.g. `netbox_custom_objects/table28model.html`) does not exist
+- Tab view `get()` must accept `**kwargs` — CO detail URLs pass `custom_object_type` slug as an extra kwarg alongside `pk`
+- `netbox_custom_objects/customobject.html` has a **hardcoded** `{% block tabs %}` (Journal + Changelog only) with no `{% model_view_tabs object %}` call. We override it via `template_override.py` + a copy of the template with the call added. The override must be in `engine.dirs` (filesystem loader) not just `app_directories`, because our app comes after `netbox_custom_objects` in `INSTALLED_APPS`
+- `netbox_custom_objects` uses a single generic URL view (`CustomObjectView`) for all CO detail pages — it never calls `get_model_urls()` for dynamic models. `_inject_co_urls()` appends our tab URL patterns to `netbox_custom_objects.urls.urlpatterns` at `ready()` time (safe: Django loads URL conf lazily on first request)
 - `SavedFiltersMixin` lives at `netbox.forms.mixins`, not `extras.forms.mixins`
 
 ## Critical Reference Files

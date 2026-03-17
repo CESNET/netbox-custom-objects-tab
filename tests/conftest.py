@@ -57,6 +57,7 @@ class _CustomFieldUIVisibleChoices:
 
 # --- netbox.* ---
 _mock('netbox')
+_mock('netbox.registry', registry={"views": {}})
 _mock('netbox.plugins',
       PluginConfig=type('PluginConfig', (), {}),
       get_plugin_config=MagicMock(return_value=[]))

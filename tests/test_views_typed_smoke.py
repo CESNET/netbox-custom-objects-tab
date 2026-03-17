@@ -370,3 +370,28 @@ class TestRegisterTypedTabs:
             register_typed_tabs([model_class], weight=2100)
 
         mock_register.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# _get_base_template
+# ---------------------------------------------------------------------------
+class TestGetBaseTemplate:
+    def _make_instance(self, app_label, model_name):
+        from unittest.mock import MagicMock
+
+        instance = MagicMock()
+        instance._meta.app_label = app_label
+        instance._meta.model_name = model_name
+        return instance
+
+    def test_co_model_returns_shared_template(self):
+        from netbox_custom_objects_tab.views.typed import _CO_BASE_TEMPLATE, _get_base_template
+
+        instance = self._make_instance("netbox_custom_objects", "table28model")
+        assert _get_base_template(instance) == _CO_BASE_TEMPLATE
+
+    def test_non_co_model_returns_per_model_template(self):
+        from netbox_custom_objects_tab.views.typed import _get_base_template
+
+        instance = self._make_instance("dcim", "device")
+        assert _get_base_template(instance) == "dcim/device.html"
