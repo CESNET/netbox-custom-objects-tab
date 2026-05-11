@@ -12,7 +12,7 @@ class NetBoxCustomObjectsTabConfig(PluginConfig):
     author_email = "jan.krupa@cesnet.cz"
     base_url = "custom-objects-tab"
     min_version = "4.5.0"
-    max_version = "4.5.99"
+    max_version = "4.6.99"
     default_settings = {
         # Per-type tabs: each Custom Object Type gets its own tab (opt-in, empty by default).
         "typed_models": [],

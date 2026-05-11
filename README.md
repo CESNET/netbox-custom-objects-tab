@@ -3,10 +3,10 @@
 [![CI](https://github.com/CESNET/netbox-custom-objects-tab/actions/workflows/ci.yml/badge.svg)](https://github.com/CESNET/netbox-custom-objects-tab/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/netbox-custom-objects-tab)](https://pypi.org/project/netbox-custom-objects-tab/)
 [![Python](https://img.shields.io/pypi/pyversions/netbox-custom-objects-tab)](https://pypi.org/project/netbox-custom-objects-tab/)
-[![NetBox](https://img.shields.io/badge/NetBox-4.5.x-blue)](https://github.com/netbox-community/netbox)
+[![NetBox](https://img.shields.io/badge/NetBox-4.5.x_|_4.6.x-blue)](https://github.com/netbox-community/netbox)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 
-A NetBox 4.5.x plugin that adds **Custom Objects** tabs to object detail pages,
+A NetBox 4.5.x / 4.6.x plugin that adds **Custom Objects** tabs to object detail pages,
 showing Custom Object instances from the `netbox_custom_objects` plugin that reference
 those objects via OBJECT or MULTIOBJECT fields. Works on standard NetBox models (Device,
 Site, Rack, …), third-party plugin models, and Custom Object detail pages themselves
@@ -26,16 +26,17 @@ Two tab modes are available:
 
 ## Requirements
 
-- NetBox 4.5.0 – 4.5.99
-- `netbox_custom_objects` plugin **≥ 0.4.6** installed and configured
+- NetBox 4.5.0 – 4.6.99
+- `netbox_custom_objects` plugin **≥ 0.4.6** installed and configured (≥ 0.5.0 recommended on NetBox 4.6)
 
 ## Compatibility
 
-| Plugin version | NetBox version | `netbox_custom_objects` version |
-|----------------|----------------|---------------------------------|
-| 2.1.x          | 4.5.4+         | ≥ 0.4.6                        |
-| 2.0.x          | 4.5.x          | ≥ 0.4.6                        |
-| 1.0.x          | 4.5.x          | ≥ 0.4.4                        |
+| Plugin version | NetBox version | `netbox_custom_objects` version       |
+|----------------|----------------|---------------------------------------|
+| 2.2.x          | 4.5.4+ / 4.6.x | ≥ 0.4.6 (≥ 0.5.0 on 4.6)              |
+| 2.1.x          | 4.5.4+         | ≥ 0.4.6                               |
+| 2.0.x          | 4.5.x          | ≥ 0.4.6                               |
+| 1.0.x          | 4.5.x          | ≥ 0.4.4                               |
 
 ## Installation
 
