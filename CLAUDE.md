@@ -98,7 +98,7 @@ To find all custom objects referencing a Device (pk=42):
 
 Reference: `netbox_custom_objects/template_content.py::CustomObjectLink.left_page()`
 
-## Key Import Paths (NetBox 4.5.x)
+## Key Import Paths (NetBox 4.5.x / 4.6.x)
 
 ```python
 from utilities.views import ViewTab, register_model_view

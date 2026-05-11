@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-05-11
+
+### Changed
+
+- Widen supported NetBox range to **4.5.0 – 4.6.99** (`max_version` bumped from
+  `4.5.99` to `4.6.99`). No code or template changes were required: every NetBox
+  API the plugin depends on — `ViewTab`, `register_model_view`, `htmx_partial`,
+  `EnhancedPaginator`, `get_paginate_count`, `BaseTable`,
+  `NetBoxModelFilterSetForm`, `SavedFiltersMixin`, `TagFilterField`,
+  `CustomFieldTypeChoices`, `CustomFieldUIVisibleChoices`, and the
+  `registry['views']` shape — is unchanged in NetBox 4.6 (verified against the
+  `v4.6.0` upstream tag). The 4.6 deprecations of `registry['models']` and
+  legacy `actions = {...}` view dicts do not affect this plugin.
+- On NetBox 4.6, the upstream `netbox_custom_objects` plugin **≥ 0.5.0** is
+  recommended (its `max_version` covers 4.6.99). The CO detail-page template
+  override remains necessary — `customobject.html` in upstream v0.5.0 still
+  hardcodes its `{% block tabs %}` without `{% model_view_tabs object %}`.
+
 ## [2.1.0] - 2026-03-16
 
 ### Added
