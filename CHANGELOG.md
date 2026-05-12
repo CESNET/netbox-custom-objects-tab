@@ -45,6 +45,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (one per Device-pointing field). Bug existed since the typed-tab
   feature was introduced in 2.0.0; only became visible with multi-FK or
   M2M field combinations.
+- **Typed-tab Bulk Edit / Bulk Delete buttons are now permission-gated**
+  against `netbox_custom_objects.change_customobject` /
+  `delete_customobject` respectively, matching the gating pattern the
+  Add button uses. Previously these buttons rendered unconditionally on
+  Typed tabs; clicks were rejected server-side by NetBox's
+  `customobject_bulk_*` views but the unguarded UI render was confusing
+  for non-superusers. Per-button guards (rather than gating the whole
+  toolbar on `change AND delete`) so a user with only `change` perm
+  sees Bulk Edit but not Bulk Delete, and vice versa. Surfaced by the
+  2.3.0 smoke test with non-admin test users.
 
 ## [2.2.0] - 2026-05-11
 

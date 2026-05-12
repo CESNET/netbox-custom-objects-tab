@@ -260,12 +260,15 @@ def _make_typed_tab_view(model_class, custom_object_type, field_infos, weight):
 
             return_url = request.get_full_path()
 
-            # Add-button: link(s) to native CO add view with reverse field pre-filled.
-            # Permission is checked against the BASE CustomObject model, not the per-type
-            # dynamic subclass: NetBox grants `netbox_custom_objects.add_customobject` (the
-            # single perm enforced by `customobject_add`), never `add_table28model`.
-            # Mirrors the pattern used inside `CustomObjectActionsColumn`.
+            # Toolbar permissions: checked against the BASE CustomObject model, not the
+            # per-type dynamic subclass. NetBox grants
+            # `netbox_custom_objects.{add,change,delete}_customobject` (the perms enforced
+            # by `customobject_add` / `customobject_bulk_edit` / `customobject_bulk_delete`),
+            # never `{add,change,delete}_table28model`. Mirrors the pattern used inside
+            # `CustomObjectActionsColumn`.
             can_add = request.user.has_perm("netbox_custom_objects.add_customobject")
+            can_change = request.user.has_perm("netbox_custom_objects.change_customobject")
+            can_delete = request.user.has_perm("netbox_custom_objects.delete_customobject")
             add_links = _build_add_links(cot.slug, instance.pk, field_infos, return_url) if can_add else []
 
             try:
@@ -284,6 +287,8 @@ def _make_typed_tab_view(model_class, custom_object_type, field_infos, weight):
                 "model": dynamic_model,
                 "preferences": preferences,
                 "can_add": can_add,
+                "can_change": can_change,
+                "can_delete": can_delete,
                 "add_links": add_links,
                 "add_label": add_label,
             }
