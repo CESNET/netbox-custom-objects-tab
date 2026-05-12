@@ -1,10 +1,12 @@
 import logging
 from collections import defaultdict
+from urllib.parse import urlencode
 
 from django.contrib.contenttypes.models import ContentType
 from django.db.models import Q
 from django.db.utils import OperationalError, ProgrammingError
 from django.shortcuts import get_object_or_404, render
+from django.urls import NoReverseMatch, reverse
 from django.views.generic import View
 from extras.choices import CustomFieldTypeChoices, CustomFieldUIVisibleChoices
 from netbox.forms import NetBoxModelFilterSetForm
@@ -14,6 +16,7 @@ from netbox_custom_objects.filtersets import get_filterset_class
 from netbox_custom_objects.models import CustomObjectTypeField
 from netbox_custom_objects.tables import CustomObjectTable
 from utilities.forms.fields import TagFilterField
+from utilities.permissions import get_permission_for_model
 from utilities.views import ViewTab, register_model_view
 
 from ._co_common import _CO_BASE_TEMPLATE, _CUSTOM_OBJECTS_APP, _get_base_template  # noqa: F401
@@ -99,10 +102,44 @@ def _build_filterset_form(custom_object_type, dynamic_model):
     )
 
 
+def _build_add_links(custom_object_type_slug, instance_pk, field_infos, return_url):
+    """
+    Build pre-filled "Add" URLs for the native customobject_add view.
+
+    field_infos = list of (field_name, field_type, [label]) for fields referencing the parent.
+    Returns list of {"field_name", "label", "url"} dicts (one per unique field), or [] if URL
+    cannot be reversed (e.g. plugin URL conf not loaded).
+    """
+    try:
+        add_base = reverse(
+            "plugins:netbox_custom_objects:customobject_add",
+            kwargs={"custom_object_type": custom_object_type_slug},
+        )
+    except NoReverseMatch:
+        return []
+
+    links = []
+    seen = set()
+    for field_name, _field_type, *rest in field_infos:
+        if field_name in seen:
+            continue
+        seen.add(field_name)
+        field_label = (rest[0] if rest else field_name) or field_name
+        qs = urlencode({field_name: instance_pk, "return_url": return_url})
+        links.append(
+            {
+                "field_name": field_name,
+                "label": field_label,
+                "url": f"{add_base}?{qs}",
+            }
+        )
+    return links
+
+
 def _count_for_type(custom_object_type, field_infos):
     """
     Return a badge callable for one Custom Object Type.
-    field_infos = list of (field_name, field_type) for fields referencing the parent model.
+    field_infos = list of (field_name, field_type, [label]) for fields referencing the parent model.
     Uses COUNT(*) only. Returns None when 0.
     """
 
@@ -117,7 +154,7 @@ def _count_for_type(custom_object_type, field_infos):
             return None
 
         total = 0
-        for field_name, field_type in field_infos:
+        for field_name, field_type, *_ in field_infos:
             if field_type == CustomFieldTypeChoices.TYPE_OBJECT:
                 total += dynamic_model.objects.filter(**{f"{field_name}_id": instance.pk}).count()
             elif field_type == CustomFieldTypeChoices.TYPE_MULTIOBJECT:
@@ -177,7 +214,7 @@ def _make_typed_tab_view(model_class, custom_object_type, field_infos, weight):
 
             # Build base queryset: union of all field filters for this type
             q_filter = Q()
-            for field_name, field_type in field_infos:
+            for field_name, field_type, *_ in field_infos:
                 if field_type == CustomFieldTypeChoices.TYPE_OBJECT:
                     q_filter |= Q(**{f"{field_name}_id": instance.pk})
                 elif field_type == CustomFieldTypeChoices.TYPE_MULTIOBJECT:
@@ -213,6 +250,16 @@ def _make_typed_tab_view(model_class, custom_object_type, field_infos, weight):
 
             return_url = request.get_full_path()
 
+            # Add-button: link(s) to native CO add view with reverse field pre-filled
+            add_permission = get_permission_for_model(dynamic_model, "add")
+            can_add = request.user.has_perm(add_permission)
+            add_links = _build_add_links(cot.slug, instance.pk, field_infos, return_url) if can_add else []
+
+            try:
+                add_label = cot.get_verbose_name()
+            except AttributeError:
+                add_label = str(cot)
+
             context = {
                 "object": instance,
                 "tab": self.tab,
@@ -223,6 +270,9 @@ def _make_typed_tab_view(model_class, custom_object_type, field_infos, weight):
                 "custom_object_type": cot,
                 "model": dynamic_model,
                 "preferences": preferences,
+                "can_add": can_add,
+                "add_links": add_links,
+                "add_label": add_label,
             }
 
             if request.htmx and not request.htmx.boosted:
@@ -250,15 +300,20 @@ def register_typed_tabs(model_classes, weight):
         ).select_related("custom_object_type")
 
         # Group by (content_type_id, custom_object_type_pk)
-        # -> list of (field_name, field_type)
+        # -> list of (field_name, field_type, field_label)
         ct_cot_fields = defaultdict(list)
         ct_cot_map = {}  # (ct_id, cot_pk) -> CustomObjectType
         for field in all_fields:
             if field.related_object_type_id is None:
                 continue
             key = (field.related_object_type_id, field.custom_object_type_id)
-            ct_cot_fields[key].append((field.name, field.type))
+            label = getattr(field, "label", "") or field.name
+            ct_cot_fields[key].append((field.name, field.type, label))
             ct_cot_map[key] = field.custom_object_type
+
+        # Sort each group by field name for deterministic Add-button order
+        for key in ct_cot_fields:
+            ct_cot_fields[key].sort(key=lambda f: f[0])
 
         # Build a set of content_type_ids we care about
         model_ct_map = {}  # content_type_id -> model_class

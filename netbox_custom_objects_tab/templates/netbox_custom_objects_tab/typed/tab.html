@@ -5,7 +5,6 @@
 {% load i18n %}
 {% block content %}
     {% if table %}
-        <hr class="mt-0 mb-3">
         {# Results / Filters inner tabs #}
         <ul class="nav nav-tabs custom-objects-subtabs mb-3" role="tablist">
             <li class="nav-item" role="presentation">
@@ -92,8 +91,33 @@
                     <div class="card">
                         <div class="htmx-container table-responsive" id="object_list">{% include 'htmx/table.html' %}</div>
                     </div>
-                    {# Bulk action buttons #}
+                    {# Add button + bulk action buttons #}
                     <div class="btn-list d-print-none">
+                        {% if can_add and add_links %}
+                            {% if add_links|length == 1 %}
+                                <a href="{{ add_links.0.url }}" class="btn btn-primary">
+                                    <i class="mdi mdi-plus-thick"></i>
+                                    {% blocktrans with label=add_label %}Add {{ label }}{% endblocktrans %}
+                                </a>
+                            {% else %}
+                                <div class="btn-group">
+                                    <button type="button"
+                                            class="btn btn-primary dropdown-toggle"
+                                            data-bs-toggle="dropdown"
+                                            aria-expanded="false">
+                                        <i class="mdi mdi-plus-thick"></i>
+                                        {% blocktrans with label=add_label %}Add {{ label }}{% endblocktrans %}
+                                    </button>
+                                    <ul class="dropdown-menu">
+                                        {% for link in add_links %}
+                                            <li>
+                                                <a class="dropdown-item" href="{{ link.url }}">{% blocktrans with f=link.label %}via {{ f }}{% endblocktrans %}</a>
+                                            </li>
+                                        {% endfor %}
+                                    </ul>
+                                </div>
+                            {% endif %}
+                        {% endif %}
                         <div class="bulk-action-buttons">
                             <button type="submit"
                                     name="_edit"
