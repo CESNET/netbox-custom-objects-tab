@@ -1,10 +1,12 @@
 import logging
 from collections import defaultdict
+from urllib.parse import urlencode
 
 from django.contrib.contenttypes.models import ContentType
 from django.db.models import Q
 from django.db.utils import OperationalError, ProgrammingError
 from django.shortcuts import get_object_or_404, render
+from django.urls import NoReverseMatch, reverse
 from django.views.generic import View
 from extras.choices import CustomFieldTypeChoices, CustomFieldUIVisibleChoices
 from netbox.forms import NetBoxModelFilterSetForm
@@ -99,11 +101,52 @@ def _build_filterset_form(custom_object_type, dynamic_model):
     )
 
 
+def _build_add_links(custom_object_type_slug, instance_pk, field_infos, return_url):
+    """
+    Build pre-filled "Add" URLs for the native customobject_add view.
+
+    field_infos = list of (field_name, field_type, [label]) for fields referencing the parent.
+    Returns list of {"field_name", "label", "url"} dicts (one per unique field), or [] if URL
+    cannot be reversed (e.g. plugin URL conf not loaded).
+    """
+    try:
+        add_base = reverse(
+            "plugins:netbox_custom_objects:customobject_add",
+            kwargs={"custom_object_type": custom_object_type_slug},
+        )
+    except NoReverseMatch:
+        return []
+
+    links = []
+    seen = set()
+    for field_name, _field_type, *rest in field_infos:
+        if field_name in seen:
+            continue
+        seen.add(field_name)
+        field_label = (rest[0] if rest else field_name) or field_name
+        qs = urlencode({field_name: instance_pk, "return_url": return_url})
+        links.append(
+            {
+                "field_name": field_name,
+                "label": field_label,
+                "url": f"{add_base}?{qs}",
+            }
+        )
+    return links
+
+
 def _count_for_type(custom_object_type, field_infos):
     """
     Return a badge callable for one Custom Object Type.
-    field_infos = list of (field_name, field_type) for fields referencing the parent model.
-    Uses COUNT(*) only. Returns None when 0.
+
+    Mirrors View.get's queryset construction (Q-OR-Q + .distinct()) so a row
+    matching the parent via multiple fields is counted exactly once. Earlier
+    versions summed per-field counts, which over-counted when a row matched
+    via multiple Device-pointing fields (e.g. primary_device + affected_devices
+    both point at the same parent). See 2.3.0 release notes.
+
+    field_infos = list of (field_name, field_type, [label]) for fields referencing the parent model.
+    Returns None when the count is 0 (so ViewTab.hide_if_empty hides the tab).
     """
 
     def _badge(instance):
@@ -116,13 +159,17 @@ def _count_for_type(custom_object_type, field_infos):
             )
             return None
 
-        total = 0
-        for field_name, field_type in field_infos:
+        q_filter = Q()
+        for field_name, field_type, *_ in field_infos:
             if field_type == CustomFieldTypeChoices.TYPE_OBJECT:
-                total += dynamic_model.objects.filter(**{f"{field_name}_id": instance.pk}).count()
+                q_filter |= Q(**{f"{field_name}_id": instance.pk})
             elif field_type == CustomFieldTypeChoices.TYPE_MULTIOBJECT:
-                total += dynamic_model.objects.filter(**{field_name: instance.pk}).count()
+                q_filter |= Q(**{field_name: instance.pk})
 
+        if not q_filter:
+            return None
+
+        total = dynamic_model.objects.filter(q_filter).distinct().count()
         return total if total > 0 else None
 
     return _badge
@@ -177,7 +224,7 @@ def _make_typed_tab_view(model_class, custom_object_type, field_infos, weight):
 
             # Build base queryset: union of all field filters for this type
             q_filter = Q()
-            for field_name, field_type in field_infos:
+            for field_name, field_type, *_ in field_infos:
                 if field_type == CustomFieldTypeChoices.TYPE_OBJECT:
                     q_filter |= Q(**{f"{field_name}_id": instance.pk})
                 elif field_type == CustomFieldTypeChoices.TYPE_MULTIOBJECT:
@@ -213,6 +260,29 @@ def _make_typed_tab_view(model_class, custom_object_type, field_infos, weight):
 
             return_url = request.get_full_path()
 
+            # Toolbar permissions: checked against the BASE CustomObject model, not the
+            # per-type dynamic subclass. NetBox grants
+            # `netbox_custom_objects.{add,change,delete}_customobject` (the perms enforced
+            # by `customobject_add` / `customobject_bulk_edit` / `customobject_bulk_delete`),
+            # never `{add,change,delete}_table28model`. Mirrors the pattern used inside
+            # `CustomObjectActionsColumn`.
+            can_add = request.user.has_perm("netbox_custom_objects.add_customobject")
+            can_change = request.user.has_perm("netbox_custom_objects.change_customobject")
+            can_delete = request.user.has_perm("netbox_custom_objects.delete_customobject")
+            # Known issue (2.3.0): Add button below routes saved objects through upstream
+            # customobject_add and immediately back to this typed tab. Clicking the per-row
+            # Delete on the just-created row in the same flow triggers an upstream ValueError
+            # in CustomObjectDeleteView (model class identity drift across the Create→Delete
+            # request boundary; see netbox_custom_objects/views.py:977). User-facing
+            # workarounds: refresh the list between Create and Delete, or use Bulk Delete.
+            # Documented in README "Known Issues" and CHANGELOG [2.3.0].
+            add_links = _build_add_links(cot.slug, instance.pk, field_infos, return_url) if can_add else []
+
+            try:
+                add_label = cot.get_verbose_name() or str(cot)
+            except AttributeError:
+                add_label = str(cot)
+
             context = {
                 "object": instance,
                 "tab": self.tab,
@@ -223,6 +293,11 @@ def _make_typed_tab_view(model_class, custom_object_type, field_infos, weight):
                 "custom_object_type": cot,
                 "model": dynamic_model,
                 "preferences": preferences,
+                "can_add": can_add,
+                "can_change": can_change,
+                "can_delete": can_delete,
+                "add_links": add_links,
+                "add_label": add_label,
             }
 
             if request.htmx and not request.htmx.boosted:
@@ -250,15 +325,20 @@ def register_typed_tabs(model_classes, weight):
         ).select_related("custom_object_type")
 
         # Group by (content_type_id, custom_object_type_pk)
-        # -> list of (field_name, field_type)
+        # -> list of (field_name, field_type, field_label)
         ct_cot_fields = defaultdict(list)
         ct_cot_map = {}  # (ct_id, cot_pk) -> CustomObjectType
         for field in all_fields:
             if field.related_object_type_id is None:
                 continue
             key = (field.related_object_type_id, field.custom_object_type_id)
-            ct_cot_fields[key].append((field.name, field.type))
+            label = getattr(field, "label", "") or field.name
+            ct_cot_fields[key].append((field.name, field.type, label))
             ct_cot_map[key] = field.custom_object_type
+
+        # Sort each group by field name for deterministic Add-button order
+        for key in ct_cot_fields:
+            ct_cot_fields[key].sort(key=lambda f: f[0])
 
         # Build a set of content_type_ids we care about
         model_ct_map = {}  # content_type_id -> model_class

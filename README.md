@@ -208,6 +208,39 @@ The tab displays:
 | **Tags** | Colored tag badges assigned to the Custom Object instance; `—` when none |
 | *(actions)* | Edit and Delete buttons, each shown only when the user has the corresponding permission |
 
+## Known Issues
+
+### Per-row Delete fails on the first attempt right after Create (upstream bug)
+
+After creating a custom object via the 2.3.0 "Add *Type*" button on a
+Typed tab, clicking the per-row **Delete** action in the list **on the
+very first attempt** raises a `ValueError` inside upstream
+`netbox_custom_objects.CustomObjectDeleteView`:
+
+```
+ValueError: Cannot query "<row title>": Must be "Table<N>Model" instance.
+```
+
+(at `netbox_custom_objects/views.py:977`, inside
+`_get_dependent_objects`). Workarounds:
+
+1. **Refresh the typed-tab list page** between clicking Create and
+   clicking the per-row Delete. The second `/delete/` GET succeeds.
+2. **Use Bulk Delete** instead — it goes through a different upstream
+   code path and is unaffected.
+
+Pre-existing rows (created in earlier sessions or via the upstream
+"Add" menu under Custom Objects → *Type*) are not affected. The bug
+originates in dynamic-model class identity drift across the
+Create → Delete request boundary in the upstream `netbox_custom_objects`
+plugin: each Custom Object Type backs a dynamically-generated Django
+model (`Table<N>Model`), the model class registry rebuilds during the
+Create POST, and the immediately-following Delete GET still holds a
+reference to the prior class object in some scope (queryset cache,
+prefetch, or import-level reference) until a request boundary refreshes
+it. Will be tracked and fixed upstream; this plugin's 2.3.0 release
+ships with the workaround documented here.
+
 ## Support
 
 - Open an issue on [GitHub](https://github.com/CESNET/netbox-custom-objects-tab/issues)

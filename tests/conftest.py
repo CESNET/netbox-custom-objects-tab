@@ -4,6 +4,7 @@ Populate sys.modules with lightweight mocks for NetBox-specific packages.
 This file is loaded by pytest before collection, ensuring mocks exist before
 plugin modules are imported.
 """
+
 import sys
 from types import ModuleType
 from unittest.mock import MagicMock
@@ -16,10 +17,10 @@ def _mock(dotted_name, **attrs):
     Create a mock module at `dotted_name` and register it (and any missing
     parent packages) in sys.modules.  Does NOT overwrite already-present entries.
     """
-    parts = dotted_name.split('.')
+    parts = dotted_name.split(".")
     # Ensure every parent package exists
     for i in range(1, len(parts)):
-        parent = '.'.join(parts[:i])
+        parent = ".".join(parts[:i])
         if parent not in sys.modules:
             sys.modules[parent] = ModuleType(parent)
 
@@ -34,7 +35,7 @@ def _mock(dotted_name, **attrs):
 
     # Attach as attribute on parent so `from parent import child` works
     if len(parts) > 1:
-        parent_mod = sys.modules['.'.join(parts[:-1])]
+        parent_mod = sys.modules[".".join(parts[:-1])]
         setattr(parent_mod, parts[-1], mod)
 
     return mod
@@ -45,41 +46,43 @@ def _mock(dotted_name, **attrs):
 # comparisons inside views.py work correctly when we set field.type = TYPE_OBJECT.
 # ---------------------------------------------------------------------------
 class _CustomFieldTypeChoices:
-    TYPE_OBJECT = 'object'
-    TYPE_MULTIOBJECT = 'multiobject'
-    TYPE_TEXT = 'text'
-    TYPE_LONGTEXT = 'longtext'
+    TYPE_OBJECT = "object"
+    TYPE_MULTIOBJECT = "multiobject"
+    TYPE_TEXT = "text"
+    TYPE_LONGTEXT = "longtext"
 
 
 class _CustomFieldUIVisibleChoices:
-    HIDDEN = 'hidden'
+    HIDDEN = "hidden"
 
 
 # --- netbox.* ---
-_mock('netbox')
-_mock('netbox.registry', registry={"views": {}})
-_mock('netbox.plugins',
-      PluginConfig=type('PluginConfig', (), {}),
-      get_plugin_config=MagicMock(return_value=[]))
-_NetBoxModelFilterSetForm = type('NetBoxModelFilterSetForm', (), {})
-_mock('netbox.forms', NetBoxModelFilterSetForm=_NetBoxModelFilterSetForm)
-_mock('netbox.forms.mixins', SavedFiltersMixin=type('SavedFiltersMixin', (), {}))
+_mock("netbox")
+_mock("netbox.registry", registry={"views": {}})
+_mock("netbox.plugins", PluginConfig=type("PluginConfig", (), {}), get_plugin_config=MagicMock(return_value=[]))
+_NetBoxModelFilterSetForm = type("NetBoxModelFilterSetForm", (), {})
+_mock("netbox.forms", NetBoxModelFilterSetForm=_NetBoxModelFilterSetForm)
+_mock("netbox.forms.mixins", SavedFiltersMixin=type("SavedFiltersMixin", (), {}))
 
 # --- extras.* ---
-_mock('extras')
+_mock("extras")
 _mock(
-    'extras.choices',
+    "extras.choices",
     CustomFieldTypeChoices=_CustomFieldTypeChoices,
     CustomFieldUIVisibleChoices=_CustomFieldUIVisibleChoices,
 )
 
 # --- utilities.* ---
-_mock('utilities')
-_mock('utilities.views', ViewTab=MagicMock(), register_model_view=MagicMock())
-_mock('utilities.paginator', EnhancedPaginator=MagicMock(), get_paginate_count=MagicMock())
-_mock('utilities.htmx', htmx_partial=MagicMock())
-_mock('utilities.forms')
-_mock('utilities.forms.fields', TagFilterField=MagicMock())
+_mock("utilities")
+_mock("utilities.views", ViewTab=MagicMock(), register_model_view=MagicMock())
+_mock("utilities.paginator", EnhancedPaginator=MagicMock(), get_paginate_count=MagicMock())
+_mock("utilities.htmx", htmx_partial=MagicMock())
+_mock("utilities.forms")
+_mock("utilities.forms.fields", TagFilterField=MagicMock())
+_mock(
+    "utilities.permissions",
+    get_permission_for_model=MagicMock(return_value="netbox_custom_objects.add_customobject"),
+)
 
 
 class _FakeBaseTable(_tables2.Table):
@@ -119,12 +122,12 @@ class _FakeBaseTable(_tables2.Table):
         ]
 
 
-_mock('netbox.tables', BaseTable=_FakeBaseTable)
+_mock("netbox.tables", BaseTable=_FakeBaseTable)
 
 # --- netbox_custom_objects.* ---
-_mock('netbox_custom_objects')
-_mock('netbox_custom_objects.models', CustomObjectTypeField=MagicMock())
-_mock('netbox_custom_objects.field_types', FIELD_TYPE_CLASS={})
-_mock('netbox_custom_objects.filtersets', get_filterset_class=MagicMock())
-_CustomObjectTable = type('CustomObjectTable', (), {})
-_mock('netbox_custom_objects.tables', CustomObjectTable=_CustomObjectTable)
+_mock("netbox_custom_objects")
+_mock("netbox_custom_objects.models", CustomObjectTypeField=MagicMock())
+_mock("netbox_custom_objects.field_types", FIELD_TYPE_CLASS={})
+_mock("netbox_custom_objects.filtersets", get_filterset_class=MagicMock())
+_CustomObjectTable = type("CustomObjectTable", (), {})
+_mock("netbox_custom_objects.tables", CustomObjectTable=_CustomObjectTable)

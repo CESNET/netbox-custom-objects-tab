@@ -5,7 +5,6 @@
 {% load i18n %}
 {% block content %}
     {% if table %}
-        <hr class="mt-0 mb-3">
         {# Results / Filters inner tabs #}
         <ul class="nav nav-tabs custom-objects-subtabs mb-3" role="tablist">
             <li class="nav-item" role="presentation">
@@ -67,20 +66,26 @@
                                         {% endblocktrans %}
                                     </label>
                                 </div>
-                                <div class="bulk-action-buttons">
-                                    <button type="submit"
-                                            name="_edit"
-                                            formaction="{% url 'plugins:netbox_custom_objects:customobject_bulk_edit' custom_object_type=custom_object_type.slug %}?return_url={{ return_url|urlencode:'' }}"
-                                            class="btn btn-yellow">
-                                        <i class="mdi mdi-pencil" aria-hidden="true"></i> Bulk Edit
-                                    </button>
-                                    <button type="submit"
-                                            name="_delete"
-                                            formaction="{% url 'plugins:netbox_custom_objects:customobject_bulk_delete' custom_object_type=custom_object_type.slug %}?return_url={{ return_url|urlencode:'' }}"
-                                            class="btn btn-red">
-                                        <i class="mdi mdi-trash-can-outline" aria-hidden="true"></i> Bulk Delete
-                                    </button>
-                                </div>
+                                {% if can_change or can_delete %}
+                                    <div class="bulk-action-buttons">
+                                        {% if can_change %}
+                                            <button type="submit"
+                                                    name="_edit"
+                                                    formaction="{% url 'plugins:netbox_custom_objects:customobject_bulk_edit' custom_object_type=custom_object_type.slug %}?return_url={{ return_url|urlencode:'' }}"
+                                                    class="btn btn-yellow">
+                                                <i class="mdi mdi-pencil" aria-hidden="true"></i> Bulk Edit
+                                            </button>
+                                        {% endif %}
+                                        {% if can_delete %}
+                                            <button type="submit"
+                                                    name="_delete"
+                                                    formaction="{% url 'plugins:netbox_custom_objects:customobject_bulk_delete' custom_object_type=custom_object_type.slug %}?return_url={{ return_url|urlencode:'' }}"
+                                                    class="btn btn-red">
+                                                <i class="mdi mdi-trash-can-outline" aria-hidden="true"></i> Bulk Delete
+                                            </button>
+                                        {% endif %}
+                                    </div>
+                                {% endif %}
                             </div>
                         </div>
                     </div>
@@ -92,22 +97,58 @@
                     <div class="card">
                         <div class="htmx-container table-responsive" id="object_list">{% include 'htmx/table.html' %}</div>
                     </div>
-                    {# Bulk action buttons #}
+                    {# Add button + bulk action buttons #}
                     <div class="btn-list d-print-none">
-                        <div class="bulk-action-buttons">
-                            <button type="submit"
-                                    name="_edit"
-                                    formaction="{% url 'plugins:netbox_custom_objects:customobject_bulk_edit' custom_object_type=custom_object_type.slug %}?return_url={{ return_url|urlencode:'' }}"
-                                    class="btn btn-yellow">
-                                <i class="mdi mdi-pencil" aria-hidden="true"></i> Bulk Edit
-                            </button>
-                            <button type="submit"
-                                    name="_delete"
-                                    formaction="{% url 'plugins:netbox_custom_objects:customobject_bulk_delete' custom_object_type=custom_object_type.slug %}?return_url={{ return_url|urlencode:'' }}"
-                                    class="btn btn-red">
-                                <i class="mdi mdi-trash-can-outline" aria-hidden="true"></i> Bulk Delete
-                            </button>
-                        </div>
+                        {% if can_add and add_links %}
+                            {% if add_links|length == 1 %}
+                                <a href="{{ add_links.0.url }}" class="btn btn-primary">
+                                    <i class="mdi mdi-plus-thick"></i>
+                                    {% blocktrans with label=add_label %}Add {{ label }}{% endblocktrans %}
+                                </a>
+                            {% else %}
+                                {# True Bootstrap split-dropdown: primary button uses the first (alphabetic) field; #}
+                                {# chevron opens a menu listing every reverse-reference field. #}
+                                <div class="btn-group">
+                                    <a href="{{ add_links.0.url }}" class="btn btn-primary">
+                                        <i class="mdi mdi-plus-thick"></i>
+                                        {% blocktrans with label=add_label %}Add {{ label }}{% endblocktrans %}
+                                    </a>
+                                    <button type="button"
+                                            class="btn btn-primary dropdown-toggle dropdown-toggle-split"
+                                            data-bs-toggle="dropdown"
+                                            aria-expanded="false">
+                                        <span class="visually-hidden">{% trans "Toggle Dropdown" %}</span>
+                                    </button>
+                                    <ul class="dropdown-menu">
+                                        {% for link in add_links %}
+                                            <li>
+                                                <a class="dropdown-item" href="{{ link.url }}">{% blocktrans with f=link.label %}via {{ f }}{% endblocktrans %}</a>
+                                            </li>
+                                        {% endfor %}
+                                    </ul>
+                                </div>
+                            {% endif %}
+                        {% endif %}
+                        {% if can_change or can_delete %}
+                            <div class="bulk-action-buttons">
+                                {% if can_change %}
+                                    <button type="submit"
+                                            name="_edit"
+                                            formaction="{% url 'plugins:netbox_custom_objects:customobject_bulk_edit' custom_object_type=custom_object_type.slug %}?return_url={{ return_url|urlencode:'' }}"
+                                            class="btn btn-yellow">
+                                        <i class="mdi mdi-pencil" aria-hidden="true"></i> Bulk Edit
+                                    </button>
+                                {% endif %}
+                                {% if can_delete %}
+                                    <button type="submit"
+                                            name="_delete"
+                                            formaction="{% url 'plugins:netbox_custom_objects:customobject_bulk_delete' custom_object_type=custom_object_type.slug %}?return_url={{ return_url|urlencode:'' }}"
+                                            class="btn btn-red">
+                                        <i class="mdi mdi-trash-can-outline" aria-hidden="true"></i> Bulk Delete
+                                    </button>
+                                {% endif %}
+                            </div>
+                        {% endif %}
                     </div>
                 </div>
             </form>

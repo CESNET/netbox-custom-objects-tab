@@ -54,11 +54,19 @@ class TestResolveModelLabels:
 
 
 class TestRegisterTabs:
-    def test_dispatches_combined_tabs_immediately_and_defers_typed(self):
-        """register_tabs() registers combined tabs in ready() and defers typed tabs."""
+    def test_dispatches_combined_and_typed_tabs_synchronously(self):
+        """register_tabs() registers BOTH combined and typed tabs synchronously
+        in ready(). Registration must be synchronous because NetBox builds each
+        model's URLconf on the first resolve() call by snapshotting
+        registry['views']; anything added after that has no URL pattern.
+        See 2.3.0 fix.
+        """
         from netbox_custom_objects_tab import views
 
         combined_models = [MagicMock()]
+        typed_models = [MagicMock()]
+        combined_models[0]._meta.app_label = "dcim"
+        typed_models[0]._meta.app_label = "ipam"
 
         config_map = {
             "combined_models": ["dcim.device"],
@@ -68,54 +76,23 @@ class TestRegisterTabs:
             "typed_weight": 2100,
         }
 
+        # _resolve_model_labels is called twice (combined, then typed); return
+        # different lists for each call.
         with (
             patch.object(views, "get_plugin_config", side_effect=lambda _plugin, key: config_map[key]),
-            patch.object(views, "_resolve_model_labels", return_value=combined_models),
+            patch.object(views, "_resolve_model_labels", side_effect=[combined_models, typed_models]),
             patch.object(views, "register_combined_tabs") as register_combined,
             patch.object(views, "register_typed_tabs") as register_typed,
-            patch("django.core.signals.request_started") as mock_signal,
+            patch.object(views, "_inject_co_urls") as inject_co_urls,
+            patch.object(views, "_deduplicate_registry") as dedup,
         ):
             views.register_tabs()
 
-        # Combined tabs registered immediately
         register_combined.assert_called_once_with(combined_models, "Custom Objects", 2000)
-        # Typed tabs NOT called during register_tabs() — deferred to first request
-        register_typed.assert_not_called()
-        # Signal handler connected for deferred init
-        mock_signal.connect.assert_called_once()
-
-    def test_deferred_init_dispatches_typed_tabs(self):
-        """_deferred_typed_init() resolves labels and registers typed tabs."""
-        from netbox_custom_objects_tab import views
-
-        typed_models = [MagicMock()]
-        typed_models[0]._meta.app_label = "ipam"
-
-        # Reset the deferred state so the handler can run
-        views._deferred_init_done = False
-        views._deferred_config.update(
-            {
-                "combined_models": [],
-                "typed_labels": ["ipam.prefix"],
-                "typed_weight": 2100,
-            }
-        )
-
-        try:
-            with (
-                patch.object(views, "_resolve_model_labels", return_value=typed_models),
-                patch.object(views, "register_typed_tabs") as register_typed,
-                patch.object(views, "_inject_co_urls"),
-                patch.object(views, "_deduplicate_registry"),
-                patch("django.core.signals.request_started"),
-            ):
-                views._deferred_typed_init()
-
-            register_typed.assert_called_once_with(typed_models, 2100)
-        finally:
-            # Clean up global state
-            views._deferred_init_done = False
-            views._deferred_config.clear()
+        register_typed.assert_called_once_with(typed_models, 2100)
+        # No CO models in either list → CO URL injection skipped.
+        inject_co_urls.assert_not_called()
+        dedup.assert_called_once()
 
     def test_skips_dispatch_when_configured_model_lists_are_empty(self):
         from netbox_custom_objects_tab import views
@@ -132,12 +109,15 @@ class TestRegisterTabs:
             patch.object(views, "get_plugin_config", side_effect=lambda _plugin, key: config_map[key]),
             patch.object(views, "_resolve_model_labels") as resolve_labels,
             patch.object(views, "register_combined_tabs") as register_combined,
-            patch("django.core.signals.request_started"),
+            patch.object(views, "register_typed_tabs") as register_typed,
+            patch.object(views, "_inject_co_urls"),
+            patch.object(views, "_deduplicate_registry"),
         ):
             views.register_tabs()
 
         resolve_labels.assert_not_called()
         register_combined.assert_not_called()
+        register_typed.assert_not_called()
 
     def test_config_exception_is_handled(self, caplog):
         from netbox_custom_objects_tab import views

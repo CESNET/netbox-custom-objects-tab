@@ -19,19 +19,23 @@ def test_typed_module_imports_under_test_mocks():
 # _count_for_type
 # ---------------------------------------------------------------------------
 class TestCountForType:
-    def _make_custom_object_type(self, field_count_map):
+    def _make_custom_object_type(self, distinct_count):
         """
-        Build a mock custom_object_type returning a dynamic model where:
-        filter(**{field_name condition})->count() returns field_count_map[field_name].
+        Build a mock custom_object_type returning a dynamic model whose
+        filter(Q(...)).distinct().count() resolves to ``distinct_count``.
+
+        The badge logic must call filter exactly ONCE with a Q object (not N
+        separate filters per field) and chain .distinct().count() on it. The
+        mock collects the Q passed to filter so tests can inspect it.
         """
         dynamic_model = MagicMock()
+        captured = {}
 
-        def filter_side_effect(**kwargs):
-            query_key = next(iter(kwargs.keys()))
-            field_name = query_key[:-3] if query_key.endswith("_id") else query_key
-            count = field_count_map.get(field_name, 0)
+        def filter_side_effect(*args, **kwargs):
+            captured["args"] = args
+            captured["kwargs"] = kwargs
             qs = MagicMock()
-            qs.count.return_value = count
+            qs.distinct.return_value.count.return_value = distinct_count
             return qs
 
         dynamic_model.objects.filter.side_effect = filter_side_effect
@@ -39,12 +43,12 @@ class TestCountForType:
         cot = MagicMock()
         cot.get_model.return_value = dynamic_model
         cot.pk = 123
-        return cot
+        return cot, dynamic_model, captured
 
     def test_returns_none_when_zero_total(self):
         from netbox_custom_objects_tab.views.typed import _count_for_type
 
-        cot = self._make_custom_object_type({"ref_object": 0, "ref_multi": 0})
+        cot, _, _ = self._make_custom_object_type(distinct_count=0)
         badge = _count_for_type(
             cot,
             [
@@ -56,20 +60,48 @@ class TestCountForType:
 
         assert badge(instance) is None
 
-    def test_returns_sum_for_object_and_multiobject_fields(self):
+    def test_uses_single_filter_with_OR_of_field_predicates(self):
+        """The badge must build one Q-OR-Q expression and pass it to a single
+        filter() call so .distinct() can deduplicate rows matching multiple
+        fields at the SQL level. Earlier versions made N separate filter calls
+        and summed their counts, which over-counted overlapping rows.
+        """
+        from django.db.models import Q
+
         from netbox_custom_objects_tab.views.typed import _count_for_type
 
-        cot = self._make_custom_object_type({"ref_object": 2, "ref_multi": 3})
+        cot, dynamic_model, captured = self._make_custom_object_type(distinct_count=4)
         badge = _count_for_type(
             cot,
             [
-                ("ref_object", CustomFieldTypeChoices.TYPE_OBJECT),
-                ("ref_multi", CustomFieldTypeChoices.TYPE_MULTIOBJECT),
+                ("primary_device", CustomFieldTypeChoices.TYPE_OBJECT),
+                ("backup_device", CustomFieldTypeChoices.TYPE_OBJECT),
+                ("affected_devices", CustomFieldTypeChoices.TYPE_MULTIOBJECT),
             ],
         )
         instance = MagicMock(pk=42)
 
-        assert badge(instance) == 5
+        assert badge(instance) == 4
+        # filter must be called exactly once (not three times — one per field)
+        assert dynamic_model.objects.filter.call_count == 1
+        # ...and the single positional arg must be a Q expression
+        (q_arg,) = captured["args"]
+        assert isinstance(q_arg, Q)
+        # The Q must combine the three field predicates with OR
+        assert q_arg.connector == "OR"
+        assert len(q_arg.children) == 3
+
+    def test_returns_none_when_field_infos_empty(self):
+        """Defensive: empty field_infos must not yield filter() — that would
+        return all rows, producing a wrong tab badge.
+        """
+        from netbox_custom_objects_tab.views.typed import _count_for_type
+
+        cot, dynamic_model, _ = self._make_custom_object_type(distinct_count=999)
+        badge = _count_for_type(cot, [])
+        assert badge(MagicMock(pk=42)) is None
+        # filter() must not be called when there are no fields to OR together
+        assert dynamic_model.objects.filter.call_count == 0
 
     def test_returns_none_when_get_model_raises(self, caplog):
         from netbox_custom_objects_tab.views.typed import _count_for_type
@@ -124,17 +156,22 @@ class TestBuildTypedTableClass:
         ft_mock.return_value.get_table_column_field.return_value = MagicMock()
         ft_mock.return_value.render_table_column = MagicMock()
 
-        with patch.dict("netbox_custom_objects.field_types.FIELD_TYPE_CLASS", {
-            CustomFieldTypeChoices.TYPE_TEXT: ft_mock,
-        }):
-            cot, model = self._make_cot_and_model([
-                {"name": "visible_field", "type": CustomFieldTypeChoices.TYPE_TEXT, "ui_visible": "visible"},
-                {
-                    "name": "hidden_field",
-                    "type": CustomFieldTypeChoices.TYPE_TEXT,
-                    "ui_visible": CustomFieldUIVisibleChoices.HIDDEN,
-                },
-            ])
+        with patch.dict(
+            "netbox_custom_objects.field_types.FIELD_TYPE_CLASS",
+            {
+                CustomFieldTypeChoices.TYPE_TEXT: ft_mock,
+            },
+        ):
+            cot, model = self._make_cot_and_model(
+                [
+                    {"name": "visible_field", "type": CustomFieldTypeChoices.TYPE_TEXT, "ui_visible": "visible"},
+                    {
+                        "name": "hidden_field",
+                        "type": CustomFieldTypeChoices.TYPE_TEXT,
+                        "ui_visible": CustomFieldUIVisibleChoices.HIDDEN,
+                    },
+                ]
+            )
             table_cls = _build_typed_table_class(cot, model)
 
         assert "visible_field" in table_cls.Meta.fields
@@ -148,13 +185,18 @@ class TestBuildTypedTableClass:
         ft_instance.render_table_column = MagicMock()
         ft_mock = MagicMock(return_value=ft_instance)
 
-        with patch.dict("netbox_custom_objects.field_types.FIELD_TYPE_CLASS", {
-            CustomFieldTypeChoices.TYPE_TEXT: ft_mock,
-        }):
-            cot, model = self._make_cot_and_model([
-                {"name": "field_a", "type": CustomFieldTypeChoices.TYPE_TEXT},
-                {"name": "field_b", "type": CustomFieldTypeChoices.TYPE_TEXT},
-            ])
+        with patch.dict(
+            "netbox_custom_objects.field_types.FIELD_TYPE_CLASS",
+            {
+                CustomFieldTypeChoices.TYPE_TEXT: ft_mock,
+            },
+        ):
+            cot, model = self._make_cot_and_model(
+                [
+                    {"name": "field_a", "type": CustomFieldTypeChoices.TYPE_TEXT},
+                    {"name": "field_b", "type": CustomFieldTypeChoices.TYPE_TEXT},
+                ]
+            )
             _build_typed_table_class(cot, model)
 
         assert ft_instance.get_table_column_field.call_count == 2
@@ -167,12 +209,17 @@ class TestBuildTypedTableClass:
         ft_instance.render_table_column_linkified = MagicMock()
         ft_mock = MagicMock(return_value=ft_instance)
 
-        with patch.dict("netbox_custom_objects.field_types.FIELD_TYPE_CLASS", {
-            CustomFieldTypeChoices.TYPE_TEXT: ft_mock,
-        }):
-            cot, model = self._make_cot_and_model([
-                {"name": "title", "type": CustomFieldTypeChoices.TYPE_TEXT, "primary": True},
-            ])
+        with patch.dict(
+            "netbox_custom_objects.field_types.FIELD_TYPE_CLASS",
+            {
+                CustomFieldTypeChoices.TYPE_TEXT: ft_mock,
+            },
+        ):
+            cot, model = self._make_cot_and_model(
+                [
+                    {"name": "title", "type": CustomFieldTypeChoices.TYPE_TEXT, "primary": True},
+                ]
+            )
             table_cls = _build_typed_table_class(cot, model)
 
         assert hasattr(table_cls, "render_title")
@@ -189,9 +236,11 @@ class TestBuildTypedTableClass:
             patch.dict("netbox_custom_objects.field_types.FIELD_TYPE_CLASS", {"custom_type": ft_mock}),
             caplog.at_level(logging.DEBUG, logger="netbox_custom_objects_tab"),
         ):
-            cot, model = self._make_cot_and_model([
-                {"name": "weird_field", "type": "custom_type"},
-            ])
+            cot, model = self._make_cot_and_model(
+                [
+                    {"name": "weird_field", "type": "custom_type"},
+                ]
+            )
             table_cls = _build_typed_table_class(cot, model)
 
         # Should still produce a valid class
@@ -241,13 +290,18 @@ class TestBuildFiltersetForm:
         ft_instance.get_filterform_field.return_value = MagicMock()
         ft_mock = MagicMock(return_value=ft_instance)
 
-        with patch.dict("netbox_custom_objects.field_types.FIELD_TYPE_CLASS", {
-            CustomFieldTypeChoices.TYPE_TEXT: ft_mock,
-        }):
-            cot, model = self._make_cot_and_model([
-                {"name": "field_a", "type": CustomFieldTypeChoices.TYPE_TEXT},
-                {"name": "field_b", "type": CustomFieldTypeChoices.TYPE_TEXT},
-            ])
+        with patch.dict(
+            "netbox_custom_objects.field_types.FIELD_TYPE_CLASS",
+            {
+                CustomFieldTypeChoices.TYPE_TEXT: ft_mock,
+            },
+        ):
+            cot, model = self._make_cot_and_model(
+                [
+                    {"name": "field_a", "type": CustomFieldTypeChoices.TYPE_TEXT},
+                    {"name": "field_b", "type": CustomFieldTypeChoices.TYPE_TEXT},
+                ]
+            )
             _build_filterset_form(cot, model)
 
         assert ft_instance.get_filterform_field.call_count == 2
@@ -263,9 +317,11 @@ class TestBuildFiltersetForm:
             patch.dict("netbox_custom_objects.field_types.FIELD_TYPE_CLASS", {"custom_type": ft_mock}),
             caplog.at_level(logging.DEBUG, logger="netbox_custom_objects_tab"),
         ):
-            cot, model = self._make_cot_and_model([
-                {"name": "weird_field", "type": "custom_type"},
-            ])
+            cot, model = self._make_cot_and_model(
+                [
+                    {"name": "weird_field", "type": "custom_type"},
+                ]
+            )
             form_cls = _build_filterset_form(cot, model)
 
         assert not hasattr(form_cls, "weird_field")
@@ -377,6 +433,65 @@ class TestRegisterTypedTabs:
 
 
 # ---------------------------------------------------------------------------
+# register_typed_tabs -- label population + deterministic ordering
+# ---------------------------------------------------------------------------
+class TestRegisterTypedTabsLabelAndOrder:
+    def test_field_label_and_name_populated_in_field_infos_and_sorted(self):
+        from netbox_custom_objects_tab.views.typed import register_typed_tabs
+
+        model_class = MagicMock(__name__="Device")
+        model_class._meta.app_label = "dcim"
+        model_class._meta.model_name = "device"
+
+        ct = MagicMock()
+        ct.pk = 10
+
+        # Two fields on the same CustomObjectType; registered in order b, a; expect sorted a, b
+        field_b = MagicMock()
+        field_b.related_object_type_id = 10
+        field_b.custom_object_type_id = 100
+        field_b.custom_object_type = MagicMock(slug="server", pk=100)
+        field_b.name = "b_device"
+        field_b.label = "B Device"
+        field_b.type = CustomFieldTypeChoices.TYPE_OBJECT
+
+        field_a = MagicMock()
+        field_a.related_object_type_id = 10
+        field_a.custom_object_type_id = 100
+        field_a.custom_object_type = MagicMock(slug="server", pk=100)
+        field_a.name = "a_device"
+        field_a.label = ""  # blank label -> should fall back to name
+        field_a.type = CustomFieldTypeChoices.TYPE_MULTIOBJECT
+
+        captured_field_infos = {}
+
+        def fake_make_view(model_cls, cot, field_infos, weight):
+            captured_field_infos["infos"] = list(field_infos)
+            return MagicMock()
+
+        with (
+            patch("netbox_custom_objects_tab.views.typed.CustomObjectTypeField") as mock_cotf,
+            patch("netbox_custom_objects_tab.views.typed.ContentType") as mock_ct,
+            patch("netbox_custom_objects_tab.views.typed.register_model_view") as mock_register,
+            patch("netbox_custom_objects_tab.views.typed._make_typed_tab_view", side_effect=fake_make_view),
+        ):
+            mock_cotf.objects.filter.return_value.select_related.return_value = [field_b, field_a]
+            mock_ct.objects.get_for_model.return_value = ct
+            mock_register.return_value = lambda cls: cls
+
+            register_typed_tabs([model_class], weight=2100)
+
+        infos = captured_field_infos["infos"]
+        assert len(infos) == 2
+        # Sorted by field name ascending
+        assert infos[0][0] == "a_device"
+        assert infos[1][0] == "b_device"
+        # Labels: blank -> falls back to name; populated -> kept
+        assert infos[0][2] == "a_device"
+        assert infos[1][2] == "B Device"
+
+
+# ---------------------------------------------------------------------------
 # _get_base_template
 # ---------------------------------------------------------------------------
 class TestGetBaseTemplate:
@@ -399,3 +514,140 @@ class TestGetBaseTemplate:
 
         instance = self._make_instance("dcim", "device")
         assert _get_base_template(instance) == "dcim/device.html"
+
+
+# ---------------------------------------------------------------------------
+# _build_add_links
+# ---------------------------------------------------------------------------
+class TestBuildAddLinks:
+    def test_returns_empty_when_reverse_fails(self):
+        from django.urls import NoReverseMatch
+
+        from netbox_custom_objects_tab.views.typed import _build_add_links
+
+        with patch("netbox_custom_objects_tab.views.typed.reverse", side_effect=NoReverseMatch):
+            links = _build_add_links(
+                "server",
+                42,
+                [("device", CustomFieldTypeChoices.TYPE_OBJECT, "Device")],
+                "/dcim/devices/42/",
+            )
+        assert links == []
+
+    def test_single_field_produces_one_link_with_prefill_and_return_url(self):
+        from netbox_custom_objects_tab.views.typed import _build_add_links
+
+        with patch(
+            "netbox_custom_objects_tab.views.typed.reverse",
+            return_value="/plugins/custom-objects/server/add/",
+        ):
+            links = _build_add_links(
+                "server",
+                42,
+                [("device", CustomFieldTypeChoices.TYPE_OBJECT, "Device")],
+                "/dcim/devices/42/custom-objects-server/",
+            )
+
+        assert len(links) == 1
+        assert links[0]["field_name"] == "device"
+        assert links[0]["label"] == "Device"
+        # Query string contains both the field prefill and the return_url, in either order
+        url = links[0]["url"]
+        assert url.startswith("/plugins/custom-objects/server/add/?")
+        assert "device=42" in url
+        assert "return_url=%2Fdcim%2Fdevices%2F42%2Fcustom-objects-server%2F" in url
+
+    def test_multiple_fields_produce_multiple_links(self):
+        from netbox_custom_objects_tab.views.typed import _build_add_links
+
+        with patch(
+            "netbox_custom_objects_tab.views.typed.reverse",
+            return_value="/plugins/custom-objects/link/add/",
+        ):
+            links = _build_add_links(
+                "link",
+                7,
+                [
+                    ("primary_device", CustomFieldTypeChoices.TYPE_OBJECT, "Primary"),
+                    ("backup_device", CustomFieldTypeChoices.TYPE_OBJECT, "Backup"),
+                ],
+                "/dcim/devices/7/",
+            )
+
+        assert len(links) == 2
+        names = {link["field_name"] for link in links}
+        labels = {link["label"] for link in links}
+        assert names == {"primary_device", "backup_device"}
+        assert labels == {"Primary", "Backup"}
+        for link in links:
+            assert f"{link['field_name']}=7" in link["url"]
+
+    def test_duplicate_field_names_deduplicated(self):
+        from netbox_custom_objects_tab.views.typed import _build_add_links
+
+        with patch(
+            "netbox_custom_objects_tab.views.typed.reverse",
+            return_value="/plugins/custom-objects/x/add/",
+        ):
+            links = _build_add_links(
+                "x",
+                1,
+                [
+                    ("device", CustomFieldTypeChoices.TYPE_OBJECT, "Device"),
+                    ("device", CustomFieldTypeChoices.TYPE_MULTIOBJECT, "Device"),
+                ],
+                "/dcim/devices/1/",
+            )
+        assert len(links) == 1
+        assert links[0]["field_name"] == "device"
+
+    def test_label_falls_back_to_field_name_when_label_blank(self):
+        from netbox_custom_objects_tab.views.typed import _build_add_links
+
+        with patch(
+            "netbox_custom_objects_tab.views.typed.reverse",
+            return_value="/plugins/custom-objects/x/add/",
+        ):
+            links = _build_add_links(
+                "x",
+                1,
+                [("device_ref", CustomFieldTypeChoices.TYPE_OBJECT, "")],
+                "/dcim/devices/1/",
+            )
+        assert links[0]["label"] == "device_ref"
+
+    def test_two_tuple_field_infos_supported_label_defaults_to_name(self):
+        """Backward-compatible: 2-tuples (no label) work via star unpacking."""
+        from netbox_custom_objects_tab.views.typed import _build_add_links
+
+        with patch(
+            "netbox_custom_objects_tab.views.typed.reverse",
+            return_value="/plugins/custom-objects/x/add/",
+        ):
+            links = _build_add_links(
+                "x",
+                1,
+                [("device", CustomFieldTypeChoices.TYPE_OBJECT)],
+                "/dcim/devices/1/",
+            )
+        assert links[0]["label"] == "device"
+
+    def test_return_url_with_query_string_is_url_encoded(self):
+        """A return_url containing & and ? must be URL-encoded so it doesn't break the outer query string."""
+        from netbox_custom_objects_tab.views.typed import _build_add_links
+
+        with patch(
+            "netbox_custom_objects_tab.views.typed.reverse",
+            return_value="/plugins/custom-objects/x/add/",
+        ):
+            links = _build_add_links(
+                "x",
+                1,
+                [("device", CustomFieldTypeChoices.TYPE_OBJECT, "Device")],
+                "/dcim/devices/1/custom-objects-x/?tag=foo&q=bar",
+            )
+        url = links[0]["url"]
+        # The inner '?' and '&' must be percent-encoded inside the return_url value
+        assert "return_url=%2Fdcim%2Fdevices%2F1%2Fcustom-objects-x%2F%3Ftag%3Dfoo%26q%3Dbar" in url
+        # Outer URL must have exactly one literal '?'
+        assert url.count("?") == 1
