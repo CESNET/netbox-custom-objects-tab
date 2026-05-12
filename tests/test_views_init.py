@@ -59,7 +59,7 @@ class TestRegisterTabs:
         in ready(). Registration must be synchronous because NetBox builds each
         model's URLconf on the first resolve() call by snapshotting
         registry['views']; anything added after that has no URL pattern.
-        See 2.3.1 fix.
+        See 2.3.0 fix.
         """
         from netbox_custom_objects_tab import views
 

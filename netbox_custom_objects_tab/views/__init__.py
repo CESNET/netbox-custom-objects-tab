@@ -177,7 +177,7 @@ def register_tabs():
     Earlier versions deferred typed-tab registration to the first HTTP request
     (commit 5bf09c3, PR #4) to silence DB-access warnings from Django and
     netbox_branching.  That broke typed-tab URL routing entirely — the Add-button
-    feature in 2.3.0 was never reachable on a deployment.  See 2.3.1 release notes.
+    feature in 2.3.0 was never reachable on a deployment.  See 2.3.0 release notes.
 
     The ``OperationalError`` / ``ProgrammingError`` safety net inside
     ``register_typed_tabs`` covers the ``manage.py migrate`` / fresh-DB case.

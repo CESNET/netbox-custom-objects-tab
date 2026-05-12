@@ -16,7 +16,6 @@ from netbox_custom_objects.filtersets import get_filterset_class
 from netbox_custom_objects.models import CustomObjectTypeField
 from netbox_custom_objects.tables import CustomObjectTable
 from utilities.forms.fields import TagFilterField
-from utilities.permissions import get_permission_for_model
 from utilities.views import ViewTab, register_model_view
 
 from ._co_common import _CO_BASE_TEMPLATE, _CUSTOM_OBJECTS_APP, _get_base_template  # noqa: F401
@@ -144,7 +143,7 @@ def _count_for_type(custom_object_type, field_infos):
     matching the parent via multiple fields is counted exactly once. Earlier
     versions summed per-field counts, which over-counted when a row matched
     via multiple Device-pointing fields (e.g. primary_device + affected_devices
-    both point at the same parent). See 2.3.3 release notes.
+    both point at the same parent). See 2.3.0 release notes.
 
     field_infos = list of (field_name, field_type, [label]) for fields referencing the parent model.
     Returns None when the count is 0 (so ViewTab.hide_if_empty hides the tab).
@@ -261,13 +260,16 @@ def _make_typed_tab_view(model_class, custom_object_type, field_infos, weight):
 
             return_url = request.get_full_path()
 
-            # Add-button: link(s) to native CO add view with reverse field pre-filled
-            add_permission = get_permission_for_model(dynamic_model, "add")
-            can_add = request.user.has_perm(add_permission)
+            # Add-button: link(s) to native CO add view with reverse field pre-filled.
+            # Permission is checked against the BASE CustomObject model, not the per-type
+            # dynamic subclass: NetBox grants `netbox_custom_objects.add_customobject` (the
+            # single perm enforced by `customobject_add`), never `add_table28model`.
+            # Mirrors the pattern used inside `CustomObjectActionsColumn`.
+            can_add = request.user.has_perm("netbox_custom_objects.add_customobject")
             add_links = _build_add_links(cot.slug, instance.pk, field_infos, return_url) if can_add else []
 
             try:
-                add_label = cot.get_verbose_name()
+                add_label = cot.get_verbose_name() or str(cot)
             except AttributeError:
                 add_label = str(cot)
 
