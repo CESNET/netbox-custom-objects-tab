@@ -139,8 +139,15 @@ def _build_add_links(custom_object_type_slug, instance_pk, field_infos, return_u
 def _count_for_type(custom_object_type, field_infos):
     """
     Return a badge callable for one Custom Object Type.
+
+    Mirrors View.get's queryset construction (Q-OR-Q + .distinct()) so a row
+    matching the parent via multiple fields is counted exactly once. Earlier
+    versions summed per-field counts, which over-counted when a row matched
+    via multiple Device-pointing fields (e.g. primary_device + affected_devices
+    both point at the same parent). See 2.3.3 release notes.
+
     field_infos = list of (field_name, field_type, [label]) for fields referencing the parent model.
-    Uses COUNT(*) only. Returns None when 0.
+    Returns None when the count is 0 (so ViewTab.hide_if_empty hides the tab).
     """
 
     def _badge(instance):
@@ -153,13 +160,17 @@ def _count_for_type(custom_object_type, field_infos):
             )
             return None
 
-        total = 0
+        q_filter = Q()
         for field_name, field_type, *_ in field_infos:
             if field_type == CustomFieldTypeChoices.TYPE_OBJECT:
-                total += dynamic_model.objects.filter(**{f"{field_name}_id": instance.pk}).count()
+                q_filter |= Q(**{f"{field_name}_id": instance.pk})
             elif field_type == CustomFieldTypeChoices.TYPE_MULTIOBJECT:
-                total += dynamic_model.objects.filter(**{field_name: instance.pk}).count()
+                q_filter |= Q(**{field_name: instance.pk})
 
+        if not q_filter:
+            return None
+
+        total = dynamic_model.objects.filter(q_filter).distinct().count()
         return total if total > 0 else None
 
     return _badge

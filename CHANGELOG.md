@@ -5,6 +5,47 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] - 2026-05-12
+
+### Added
+
+- **Add button on Typed tabs** ([#9](https://github.com/CESNET/netbox-custom-objects-tab/issues/9)) —
+  each Typed tab now shows an "Add *Type*" button in the bottom toolbar
+  (alongside Bulk Edit and Bulk Delete) that opens the native
+  `customobject_add` view with the reverse-reference field pre-filled to the
+  parent object's PK and `return_url` set back to the tab. After saving, the
+  user lands back on the same tab, with any active filters preserved. When a
+  Custom Object Type has multiple fields referencing the same parent model
+  (e.g. `primary_device` and `backup_device` both → Device), the button
+  becomes a split-dropdown listing each field. The button is hidden for
+  users without `add_customobject` permission.
+
+### Fixed
+
+- **Typed-tab URL registration**: typed-tab views are now registered
+  synchronously inside `AppConfig.ready()` instead of from a `request_started`
+  signal handler. The earlier deferral (commit `5bf09c3`, PR #4) silenced
+  some startup warnings but broke typed-tab routing entirely — NetBox's
+  `get_model_urls()` snapshots `registry['views']` when each model's
+  `urls.py` is first imported, so any view added afterward has no URL
+  pattern. Combined tabs were unaffected because they were already
+  synchronous; typed tabs were unreachable on every deployment with
+  `typed_models` configured. The `OperationalError`/`ProgrammingError`
+  safety net inside `register_typed_tabs` still covers the
+  `manage.py migrate` / fresh-DB case.
+- **Typed-tab badge no longer over-counts** rows that match the parent via
+  multiple fields. `_count_for_type` previously summed per-field counts
+  with no deduplication, so a Custom Object Type with several fields
+  pointing to the same parent model (e.g. `primary_device` +
+  `backup_device` + `affected_devices` all → `dcim.device`) reported a
+  badge number larger than the actual table row count whenever a row
+  matched the parent via more than one field. Now uses the same
+  `Q-OR-Q + .distinct()` pattern as the table queryset, so the badge and
+  the table always agree. Bonus: one SQL query per tab badge instead of N
+  (one per Device-pointing field). Bug existed since the typed-tab
+  feature was introduced in 2.0.0; only became visible with multi-FK or
+  M2M field combinations.
+
 ## [2.2.0] - 2026-05-11
 
 ### Changed

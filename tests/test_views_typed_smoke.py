@@ -19,19 +19,23 @@ def test_typed_module_imports_under_test_mocks():
 # _count_for_type
 # ---------------------------------------------------------------------------
 class TestCountForType:
-    def _make_custom_object_type(self, field_count_map):
+    def _make_custom_object_type(self, distinct_count):
         """
-        Build a mock custom_object_type returning a dynamic model where:
-        filter(**{field_name condition})->count() returns field_count_map[field_name].
+        Build a mock custom_object_type returning a dynamic model whose
+        filter(Q(...)).distinct().count() resolves to ``distinct_count``.
+
+        The badge logic must call filter exactly ONCE with a Q object (not N
+        separate filters per field) and chain .distinct().count() on it. The
+        mock collects the Q passed to filter so tests can inspect it.
         """
         dynamic_model = MagicMock()
+        captured = {}
 
-        def filter_side_effect(**kwargs):
-            query_key = next(iter(kwargs.keys()))
-            field_name = query_key[:-3] if query_key.endswith("_id") else query_key
-            count = field_count_map.get(field_name, 0)
+        def filter_side_effect(*args, **kwargs):
+            captured["args"] = args
+            captured["kwargs"] = kwargs
             qs = MagicMock()
-            qs.count.return_value = count
+            qs.distinct.return_value.count.return_value = distinct_count
             return qs
 
         dynamic_model.objects.filter.side_effect = filter_side_effect
@@ -39,12 +43,12 @@ class TestCountForType:
         cot = MagicMock()
         cot.get_model.return_value = dynamic_model
         cot.pk = 123
-        return cot
+        return cot, dynamic_model, captured
 
     def test_returns_none_when_zero_total(self):
         from netbox_custom_objects_tab.views.typed import _count_for_type
 
-        cot = self._make_custom_object_type({"ref_object": 0, "ref_multi": 0})
+        cot, _, _ = self._make_custom_object_type(distinct_count=0)
         badge = _count_for_type(
             cot,
             [
@@ -56,20 +60,48 @@ class TestCountForType:
 
         assert badge(instance) is None
 
-    def test_returns_sum_for_object_and_multiobject_fields(self):
+    def test_uses_single_filter_with_OR_of_field_predicates(self):
+        """The badge must build one Q-OR-Q expression and pass it to a single
+        filter() call so .distinct() can deduplicate rows matching multiple
+        fields at the SQL level. Earlier versions made N separate filter calls
+        and summed their counts, which over-counted overlapping rows.
+        """
+        from django.db.models import Q
+
         from netbox_custom_objects_tab.views.typed import _count_for_type
 
-        cot = self._make_custom_object_type({"ref_object": 2, "ref_multi": 3})
+        cot, dynamic_model, captured = self._make_custom_object_type(distinct_count=4)
         badge = _count_for_type(
             cot,
             [
-                ("ref_object", CustomFieldTypeChoices.TYPE_OBJECT),
-                ("ref_multi", CustomFieldTypeChoices.TYPE_MULTIOBJECT),
+                ("primary_device", CustomFieldTypeChoices.TYPE_OBJECT),
+                ("backup_device", CustomFieldTypeChoices.TYPE_OBJECT),
+                ("affected_devices", CustomFieldTypeChoices.TYPE_MULTIOBJECT),
             ],
         )
         instance = MagicMock(pk=42)
 
-        assert badge(instance) == 5
+        assert badge(instance) == 4
+        # filter must be called exactly once (not three times — one per field)
+        assert dynamic_model.objects.filter.call_count == 1
+        # ...and the single positional arg must be a Q expression
+        (q_arg,) = captured["args"]
+        assert isinstance(q_arg, Q)
+        # The Q must combine the three field predicates with OR
+        assert q_arg.connector == "OR"
+        assert len(q_arg.children) == 3
+
+    def test_returns_none_when_field_infos_empty(self):
+        """Defensive: empty field_infos must not yield filter() — that would
+        return all rows, producing a wrong tab badge.
+        """
+        from netbox_custom_objects_tab.views.typed import _count_for_type
+
+        cot, dynamic_model, _ = self._make_custom_object_type(distinct_count=999)
+        badge = _count_for_type(cot, [])
+        assert badge(MagicMock(pk=42)) is None
+        # filter() must not be called when there are no fields to OR together
+        assert dynamic_model.objects.filter.call_count == 0
 
     def test_returns_none_when_get_model_raises(self, caplog):
         from netbox_custom_objects_tab.views.typed import _count_for_type
