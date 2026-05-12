@@ -269,6 +269,13 @@ def _make_typed_tab_view(model_class, custom_object_type, field_infos, weight):
             can_add = request.user.has_perm("netbox_custom_objects.add_customobject")
             can_change = request.user.has_perm("netbox_custom_objects.change_customobject")
             can_delete = request.user.has_perm("netbox_custom_objects.delete_customobject")
+            # Known issue (2.3.0): Add button below routes saved objects through upstream
+            # customobject_add and immediately back to this typed tab. Clicking the per-row
+            # Delete on the just-created row in the same flow triggers an upstream ValueError
+            # in CustomObjectDeleteView (model class identity drift across the Create→Delete
+            # request boundary; see netbox_custom_objects/views.py:977). User-facing
+            # workarounds: refresh the list between Create and Delete, or use Bulk Delete.
+            # Documented in README "Known Issues" and CHANGELOG [2.3.0].
             add_links = _build_add_links(cot.slug, instance.pk, field_infos, return_url) if can_add else []
 
             try:

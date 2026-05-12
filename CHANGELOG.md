@@ -56,6 +56,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sees Bulk Edit but not Bulk Delete, and vice versa. Surfaced by the
   2.3.0 smoke test with non-admin test users.
 
+### Known Issues
+
+- **Upstream `netbox_custom_objects` bug surfaced by the new Add button**:
+  deleting a custom object **immediately** after creating it via the
+  2.3.0 Add button (Create → row dropdown → Delete in the typed tab list)
+  raises `ValueError: Cannot query "X": Must be "Table<N>Model" instance.`
+  from `CustomObjectDeleteView._get_dependent_objects` (upstream
+  `netbox_custom_objects/views.py:977`). The error fires only on the
+  *first* delete GET in that flow; refreshing the list page before
+  clicking Delete works around it, and Bulk Delete (different code path)
+  is unaffected. Root cause is dynamic-model class identity drift across
+  the Create → Delete request boundary in upstream code (the dynamic
+  model class registry rebuilds during Create, but the immediately-
+  following Delete request still holds a reference to the previous class
+  in some scope). Tracked here as a documentation-only release note since
+  the fix needs to land in `netbox_custom_objects`, not in this plugin.
+  See README "Known Issues" section for user-facing workarounds.
+
 ## [2.2.0] - 2026-05-11
 
 ### Changed
