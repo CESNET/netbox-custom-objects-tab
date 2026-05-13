@@ -418,16 +418,21 @@ def register_typed_tabs(model_classes, weight):
         ]
 
         # Non-polymorphic fields: single related_object_type FK.
+        # is_polymorphic=False keeps this queryset disjoint from poly_fields
+        # below — a field row with both attrs set (legacy misconfig:
+        # is_polymorphic is immutable upstream but related_object_type isn't
+        # nulled when toggled) would otherwise hit both querysets. _record's
+        # seen_field_keys stays as defence in depth.
         non_poly_fields = list(
             CustomObjectTypeField.objects.filter(
+                is_polymorphic=False,
                 type__in=type_choices,
             ).select_related("custom_object_type")
         )
 
         # Polymorphic fields: related_object_types M2M (one field → many target CTs).
         # Fetched as a separate queryset so we can iterate prefetched M2M targets
-        # without an extra query per field. Both lists may overlap by PK only if
-        # a field has both attrs set — that's a misconfiguration; we de-dup below.
+        # without an extra query per field.
         poly_fields = list(
             CustomObjectTypeField.objects.filter(
                 is_polymorphic=True,
