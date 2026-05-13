@@ -2,6 +2,7 @@ import logging
 from collections import defaultdict
 from urllib.parse import urlencode
 
+from django.apps import apps
 from django.contrib.contenttypes.models import ContentType
 from django.db.models import Q
 from django.db.utils import OperationalError, ProgrammingError
@@ -21,6 +22,52 @@ from utilities.views import ViewTab, register_model_view
 from ._co_common import _CO_BASE_TEMPLATE, _CUSTOM_OBJECTS_APP, _get_base_template  # noqa: F401
 
 logger = logging.getLogger("netbox_custom_objects_tab")
+
+
+def _build_q_for_field(host_ct_id, instance_pk, field_info):
+    """
+    Build a Q filter that selects custom-object rows of this type whose `field`
+    references the host (host_ct_id, instance_pk).
+
+    field_info = (name, type, label, is_polymorphic, through_model_name) — the
+    last two are only meaningful for polymorphic fields. Returns Q() (an empty
+    no-op filter) if the field can't be resolved, so callers can OR it safely.
+    """
+    field_name = field_info[0]
+    field_type = field_info[1]
+    is_poly = field_info[3] if len(field_info) >= 5 else False
+    through_model_name = field_info[4] if len(field_info) >= 5 else None
+
+    if field_type == CustomFieldTypeChoices.TYPE_OBJECT:
+        if is_poly:
+            return Q(
+                **{
+                    f"{field_name}_content_type_id": host_ct_id,
+                    f"{field_name}_object_id": instance_pk,
+                }
+            )
+        return Q(**{f"{field_name}_id": instance_pk})
+
+    if field_type == CustomFieldTypeChoices.TYPE_MULTIOBJECT:
+        if is_poly:
+            try:
+                through = apps.get_model(_CUSTOM_OBJECTS_APP, through_model_name)
+            except LookupError:
+                logger.exception(
+                    "Could not resolve through model %r for polymorphic field %s",
+                    through_model_name,
+                    field_name,
+                )
+                return Q()
+            return Q(
+                pk__in=through.objects.filter(
+                    content_type_id=host_ct_id,
+                    object_id=instance_pk,
+                ).values("source_id")
+            )
+        return Q(**{field_name: instance_pk})
+
+    return Q()
 
 
 def _build_typed_table_class(custom_object_type, dynamic_model):
@@ -101,13 +148,24 @@ def _build_filterset_form(custom_object_type, dynamic_model):
     )
 
 
-def _build_add_links(custom_object_type_slug, instance_pk, field_infos, return_url):
+def _build_add_links(custom_object_type_slug, host_instance, field_infos, return_url):
     """
     Build pre-filled "Add" URLs for the native customobject_add view.
 
-    field_infos = list of (field_name, field_type, [label]) for fields referencing the parent.
-    Returns list of {"field_name", "label", "url"} dicts (one per unique field), or [] if URL
-    cannot be reversed (e.g. plugin URL conf not loaded).
+    field_infos = list of (name, type, label, is_polymorphic, through_model_name).
+    Returns list of {"field_name", "label", "url"} dicts (one per unique field).
+
+    Upstream's add form binds polymorphic fields to differently-named sub-fields,
+    not their concrete column names, so prefill keys differ per kind:
+
+    - Non-poly OBJECT / MULTIOBJECT  → `?<name>=<host_pk>`
+    - Poly OBJECT                    → `?<name>__ct=<host_ct_pk>&<name>__obj=<host_pk>`
+    - Poly MULTIOBJECT               → `?<name>__<host_app>__<host_model>=<host_pk>`
+      (the form synthesizes one DynamicModelMultipleChoiceField per allowed
+      target type; we only fill the one matching the host)
+
+    Returns [] when the customobject_add URL can't be reversed (e.g. plugin URL
+    conf not loaded yet).
     """
     try:
         add_base = reverse(
@@ -117,14 +175,33 @@ def _build_add_links(custom_object_type_slug, instance_pk, field_infos, return_u
     except NoReverseMatch:
         return []
 
+    host_pk = host_instance.pk
+    host_app = host_instance._meta.app_label
+    host_model = host_instance._meta.model_name
+    host_ct_pk = ContentType.objects.get_for_model(host_instance._meta.model).pk
+
     links = []
     seen = set()
-    for field_name, _field_type, *rest in field_infos:
+    for field_info in field_infos:
+        field_name = field_info[0]
         if field_name in seen:
             continue
         seen.add(field_name)
-        field_label = (rest[0] if rest else field_name) or field_name
-        qs = urlencode({field_name: instance_pk, "return_url": return_url})
+
+        field_type = field_info[1]
+        field_label = (field_info[2] if len(field_info) >= 3 and field_info[2] else field_name) or field_name
+        is_poly = len(field_info) >= 5 and field_info[3]
+
+        if not is_poly:
+            prefill = {field_name: host_pk}
+        elif field_type == CustomFieldTypeChoices.TYPE_OBJECT:
+            prefill = {f"{field_name}__ct": host_ct_pk, f"{field_name}__obj": host_pk}
+        elif field_type == CustomFieldTypeChoices.TYPE_MULTIOBJECT:
+            prefill = {f"{field_name}__{host_app}__{host_model}": host_pk}
+        else:
+            continue
+
+        qs = urlencode({**prefill, "return_url": return_url})
         links.append(
             {
                 "field_name": field_name,
@@ -135,7 +212,7 @@ def _build_add_links(custom_object_type_slug, instance_pk, field_infos, return_u
     return links
 
 
-def _count_for_type(custom_object_type, field_infos):
+def _count_for_type(custom_object_type, field_infos, host_ct_id):
     """
     Return a badge callable for one Custom Object Type.
 
@@ -145,7 +222,11 @@ def _count_for_type(custom_object_type, field_infos):
     via multiple Device-pointing fields (e.g. primary_device + affected_devices
     both point at the same parent). See 2.3.0 release notes.
 
-    field_infos = list of (field_name, field_type, [label]) for fields referencing the parent model.
+    host_ct_id is captured at registration time and is needed to build the
+    polymorphic-field filters (which key the GFK / through table by
+    content_type + object_id, not by a plain FK column).
+
+    field_infos = list of (name, type, label, is_polymorphic, through_model_name).
     Returns None when the count is 0 (so ViewTab.hide_if_empty hides the tab).
     """
 
@@ -160,13 +241,14 @@ def _count_for_type(custom_object_type, field_infos):
             return None
 
         q_filter = Q()
-        for field_name, field_type, *_ in field_infos:
-            if field_type == CustomFieldTypeChoices.TYPE_OBJECT:
-                q_filter |= Q(**{f"{field_name}_id": instance.pk})
-            elif field_type == CustomFieldTypeChoices.TYPE_MULTIOBJECT:
-                q_filter |= Q(**{field_name: instance.pk})
+        has_filter = False
+        for info in field_infos:
+            q = _build_q_for_field(host_ct_id, instance.pk, info)
+            if q.children:
+                q_filter |= q
+                has_filter = True
 
-        if not q_filter:
+        if not has_filter:
             return None
 
         total = dynamic_model.objects.filter(q_filter).distinct().count()
@@ -175,13 +257,15 @@ def _count_for_type(custom_object_type, field_infos):
     return _badge
 
 
-def _make_typed_tab_view(model_class, custom_object_type, field_infos, weight):
+def _make_typed_tab_view(model_class, custom_object_type, field_infos, weight, host_ct_id):
     """
     Factory returning a View subclass for a per-type tab.
-    field_infos = list of (field_name, field_type) for fields of this Custom Object Type
-    that reference model_class.
+    field_infos = list of (name, type, label, is_polymorphic, through_model_name)
+    for fields of this Custom Object Type that reference model_class.
+    host_ct_id pins the host content type so polymorphic Q-filters can select
+    by (content_type, object_id) instead of a single FK column.
     """
-    badge_fn = _count_for_type(custom_object_type, field_infos)
+    badge_fn = _count_for_type(custom_object_type, field_infos, host_ct_id)
     cot_pk = custom_object_type.pk
     cot_label = str(custom_object_type)
 
@@ -222,15 +306,27 @@ def _make_typed_tab_view(model_class, custom_object_type, field_infos, weight):
                 logger.exception("Could not get model for CustomObjectType %s", cot_pk)
                 return render(request, "netbox_custom_objects_tab/typed/tab.html", error_context)
 
-            # Build base queryset: union of all field filters for this type
+            # Build base queryset: union of all field filters for this type.
+            # Polymorphic fields contribute Q(pk__in=<through subquery>) or a
+            # (content_type_id, object_id) pair, both handled by _build_q_for_field.
+            #
+            # An empty Q() is the identity element of `|`, so filter(Q()) returns
+            # ALL rows. Track has_filter (mirrors _count_for_type) and short-circuit
+            # to .none() if every _build_q_for_field call returned an empty Q —
+            # otherwise an unresolvable through model or unknown field type would
+            # silently widen the tab to every row of the target type.
             q_filter = Q()
-            for field_name, field_type, *_ in field_infos:
-                if field_type == CustomFieldTypeChoices.TYPE_OBJECT:
-                    q_filter |= Q(**{f"{field_name}_id": instance.pk})
-                elif field_type == CustomFieldTypeChoices.TYPE_MULTIOBJECT:
-                    q_filter |= Q(**{field_name: instance.pk})
+            has_filter = False
+            for info in field_infos:
+                q = _build_q_for_field(host_ct_id, instance.pk, info)
+                if q.children:
+                    q_filter |= q
+                    has_filter = True
 
-            base_qs = dynamic_model.objects.filter(q_filter).distinct()
+            if has_filter:
+                base_qs = dynamic_model.objects.filter(q_filter).distinct()
+            else:
+                base_qs = dynamic_model.objects.none()
 
             # Apply filterset
             filterset_class = get_filterset_class(dynamic_model)
@@ -276,7 +372,7 @@ def _make_typed_tab_view(model_class, custom_object_type, field_infos, weight):
             # request boundary; see netbox_custom_objects/views.py:977). User-facing
             # workarounds: refresh the list between Create and Delete, or use Bulk Delete.
             # Documented in README "Known Issues" and CHANGELOG [2.3.0].
-            add_links = _build_add_links(cot.slug, instance.pk, field_infos, return_url) if can_add else []
+            add_links = _build_add_links(cot.slug, instance, field_infos, return_url) if can_add else []
 
             try:
                 add_label = cot.get_verbose_name() or str(cot)
@@ -316,25 +412,64 @@ def register_typed_tabs(model_classes, weight):
     """
 
     try:
-        # Collect all relevant fields
-        all_fields = CustomObjectTypeField.objects.filter(
-            type__in=[
-                CustomFieldTypeChoices.TYPE_OBJECT,
-                CustomFieldTypeChoices.TYPE_MULTIOBJECT,
-            ],
-        ).select_related("custom_object_type")
+        type_choices = [
+            CustomFieldTypeChoices.TYPE_OBJECT,
+            CustomFieldTypeChoices.TYPE_MULTIOBJECT,
+        ]
 
-        # Group by (content_type_id, custom_object_type_pk)
-        # -> list of (field_name, field_type, field_label)
+        # Non-polymorphic fields: single related_object_type FK.
+        # is_polymorphic=False keeps this queryset disjoint from poly_fields
+        # below — a field row with both attrs set (legacy misconfig:
+        # is_polymorphic is immutable upstream but related_object_type isn't
+        # nulled when toggled) would otherwise hit both querysets. _record's
+        # seen_field_keys stays as defence in depth.
+        non_poly_fields = list(
+            CustomObjectTypeField.objects.filter(
+                is_polymorphic=False,
+                type__in=type_choices,
+            ).select_related("custom_object_type")
+        )
+
+        # Polymorphic fields: related_object_types M2M (one field → many target CTs).
+        # Fetched as a separate queryset so we can iterate prefetched M2M targets
+        # without an extra query per field.
+        poly_fields = list(
+            CustomObjectTypeField.objects.filter(
+                is_polymorphic=True,
+                type__in=type_choices,
+            )
+            .select_related("custom_object_type")
+            .prefetch_related("related_object_types")
+        )
+
+        # Group by (host_content_type_id, custom_object_type_pk)
+        # -> list of (name, type, label, is_polymorphic, through_model_name)
         ct_cot_fields = defaultdict(list)
         ct_cot_map = {}  # (ct_id, cot_pk) -> CustomObjectType
-        for field in all_fields:
+        seen_field_keys = set()  # (field.pk, ct_id) — de-dup if a field appears in both querysets
+
+        def _record(field, ct_id, is_poly):
+            if ct_id is None:
+                return
+            key_dup = (field.pk, ct_id)
+            if key_dup in seen_field_keys:
+                return
+            seen_field_keys.add(key_dup)
+            key = (ct_id, field.custom_object_type_id)
+            label = getattr(field, "label", "") or field.name
+            through_name = field.through_model_name if is_poly else None
+            ct_cot_fields[key].append((field.name, field.type, label, is_poly, through_name))
+            ct_cot_map[key] = field.custom_object_type
+
+        for field in non_poly_fields:
+            # Skip purely polymorphic fields that have no FK target.
             if field.related_object_type_id is None:
                 continue
-            key = (field.related_object_type_id, field.custom_object_type_id)
-            label = getattr(field, "label", "") or field.name
-            ct_cot_fields[key].append((field.name, field.type, label))
-            ct_cot_map[key] = field.custom_object_type
+            _record(field, field.related_object_type_id, is_poly=False)
+
+        for field in poly_fields:
+            for ct in field.related_object_types.all():
+                _record(field, ct.pk, is_poly=True)
 
         # Sort each group by field name for deterministic Add-button order
         for key in ct_cot_fields:
@@ -368,7 +503,7 @@ def register_typed_tabs(model_classes, weight):
             )
             continue
 
-        view_class = _make_typed_tab_view(model_class, custom_object_type, field_infos, weight)
+        view_class = _make_typed_tab_view(model_class, custom_object_type, field_infos, weight, ct_id)
         register_model_view(
             model_class,
             name=f"custom_objects_{slug}",

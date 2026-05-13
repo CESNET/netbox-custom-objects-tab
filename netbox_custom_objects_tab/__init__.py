@@ -33,6 +33,25 @@ class NetBoxCustomObjectsTabConfig(PluginConfig):
 
     def ready(self):
         super().ready()
+
+        # Hard gate: require netbox-custom-objects >= 0.5.0. We probe behaviour
+        # (the `is_polymorphic` model field added in 0.5.0) rather than parsing
+        # a version string, because forks and pre-release tags can carry any
+        # version label but either have or lack the field we actually use.
+        # Raising ImproperlyConfigured here aborts NetBox startup with a clean,
+        # named error in the logs — preferable to letting a half-loaded plugin
+        # ImportError mid-request.
+        from django.core.exceptions import FieldDoesNotExist, ImproperlyConfigured
+        from netbox_custom_objects.models import CustomObjectTypeField
+
+        try:
+            CustomObjectTypeField._meta.get_field("is_polymorphic")
+        except FieldDoesNotExist as exc:
+            raise ImproperlyConfigured(
+                "netbox-custom-objects-tab 2.4+ requires netbox-custom-objects>=0.5.0. "
+                "Upgrade with: pip install -U 'netbox-custom-objects>=0.5.0'"
+            ) from exc
+
         from . import template_override, views
 
         template_override.install()

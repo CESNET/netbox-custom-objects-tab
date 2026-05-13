@@ -27,16 +27,26 @@ Two tab modes are available:
 ## Requirements
 
 - NetBox 4.5.0 – 4.6.99
-- `netbox_custom_objects` plugin **≥ 0.4.6** installed and configured (≥ 0.5.0 recommended on NetBox 4.6)
+- `netbox_custom_objects` plugin **≥ 0.5.0** installed and configured
+  (**≥ 0.5.1 strongly recommended** — 0.5.0 has an upstream Delete bug
+  that 0.5.1 fixes; see [Known Issues](#known-issues))
 
 ## Compatibility
 
-| Plugin version | NetBox version | `netbox_custom_objects` version       |
-|----------------|----------------|---------------------------------------|
-| 2.2.x          | 4.5.4+ / 4.6.x | ≥ 0.4.6 (≥ 0.5.0 on 4.6)              |
-| 2.1.x          | 4.5.4+         | ≥ 0.4.6                               |
-| 2.0.x          | 4.5.x          | ≥ 0.4.6                               |
-| 1.0.x          | 4.5.x          | ≥ 0.4.4                               |
+| Plugin version | NetBox version | `netbox_custom_objects` version                                        |
+|----------------|----------------|------------------------------------------------------------------------|
+| 2.4.x          | 4.5.4+ / 4.6.x | **≥ 0.5.0 required** (≥ 0.5.1 strongly recommended — fixes Delete bug) |
+| 2.3.x          | 4.5.4+ / 4.6.x | ≥ 0.4.6 (≥ 0.5.0 on 4.6)                                               |
+| 2.2.x          | 4.5.4+ / 4.6.x | ≥ 0.4.6 (≥ 0.5.0 on 4.6)                                               |
+| 2.1.x          | 4.5.4+         | ≥ 0.4.6                                                                |
+| 2.0.x          | 4.5.x          | ≥ 0.4.6                                                                |
+| 1.0.x          | 4.5.x          | ≥ 0.4.4                                                                |
+
+Plugin 2.4.x **enforces** the 0.5.0 minimum at startup: `PluginConfig.ready()`
+probes for the upstream `is_polymorphic` model field and raises
+`ImproperlyConfigured` with an upgrade message if the installed upstream is
+older. The check is behaviour-based (looks for the field, not a version
+string) so it stays correct across forks and pre-release tags.
 
 ## Installation
 
@@ -210,36 +220,110 @@ The tab displays:
 
 ## Known Issues
 
-### Per-row Delete fails on the first attempt right after Create (upstream bug)
+### Upstream Delete bug on `netbox-custom-objects == 0.5.0` (fixed in 0.5.1)
 
-After creating a custom object via the 2.3.0 "Add *Type*" button on a
-Typed tab, clicking the per-row **Delete** action in the list **on the
-very first attempt** raises a `ValueError` inside upstream
+**Affected versions:** `netbox-custom-objects == 0.5.0` only.
+**Fixed in:** `netbox-custom-objects` `main` (PR
+[#501](https://github.com/netboxlabs/netbox-custom-objects/pull/501),
+merged 2026-05-11) and the forthcoming `0.5.1` release.
+**Not affected:** `0.4.x` (no polymorphic through-models) and any build
+that contains PR #501.
+
+Deleting a Custom Object instance through the NetBox UI on a 0.5.0
+install can raise a `ValueError` inside
 `netbox_custom_objects.CustomObjectDeleteView`:
 
 ```
 ValueError: Cannot query "<row title>": Must be "Table<N>Model" instance.
 ```
 
-(at `netbox_custom_objects/views.py:977`, inside
-`_get_dependent_objects`). Workarounds:
+(at `netbox_custom_objects/views.py:977`, inside `_get_dependent_objects`,
+called by Django's `Collector.collect()`). The same crash also occurs from
+the bulk-delete view (`CustomObjectBulkDeleteView`) because NetBox's
+generic `BulkDeleteView.post()` iterates the queryset and calls `obj.delete()`
+per row — the same code path. **Bulk Delete is NOT a workaround**
+(earlier versions of this README claimed it was; that was incorrect).
 
-1. **Refresh the typed-tab list page** between clicking Create and
-   clicking the per-row Delete. The second `/delete/` GET succeeds.
-2. **Use Bulk Delete** instead — it goes through a different upstream
-   code path and is unaffected.
+#### Recommended fix — upgrade upstream
 
-Pre-existing rows (created in earlier sessions or via the upstream
-"Add" menu under Custom Objects → *Type*) are not affected. The bug
-originates in dynamic-model class identity drift across the
-Create → Delete request boundary in the upstream `netbox_custom_objects`
-plugin: each Custom Object Type backs a dynamically-generated Django
-model (`Table<N>Model`), the model class registry rebuilds during the
-Create POST, and the immediately-following Delete GET still holds a
-reference to the prior class object in some scope (queryset cache,
-prefetch, or import-level reference) until a request boundary refreshes
-it. Will be tracked and fixed upstream; this plugin's 2.3.0 release
-ships with the workaround documented here.
+The cleanest resolution is to upgrade `netbox-custom-objects` to a
+build that contains PR #501. As of writing (2026-05-13) no `0.5.1`
+release tag exists yet, so the options are:
+
+```bash
+# Option A: install from upstream main (contains PR #501)
+pip install --upgrade --force-reinstall \
+    git+https://github.com/netboxlabs/netbox-custom-objects.git@main
+
+# Option B: wait for the 0.5.1 release tag and pin to it
+pip install --upgrade 'netbox-custom-objects>=0.5.1'
+```
+
+Then restart NetBox. The entire delete-bug class disappears regardless
+of this plugin's state — no plugin-side change required.
+
+Several adjacent fixes also landed in upstream `main` post-0.5.0 and
+will ship with `0.5.1`: PR #504 (cross-COT FK fields after restart),
+PR #505 (stale through-model FK path_infos on COT regeneration), and
+PR #510 (self-referential FK isinstance check). Upgrading once closes
+the whole family.
+
+#### Workarounds if you cannot upgrade yet
+
+1. **`manage.py shell` direct delete** (recommended for one-off rows).
+   A freshly-spawned shell process initialises the model cache exactly
+   once, so the class identity is consistent throughout the session and
+   the collector's identity-check succeeds:
+   ```bash
+   /opt/netbox/venv/bin/python /opt/netbox/netbox/manage.py shell <<'PY'
+   from netbox_custom_objects.models import CustomObjectType
+   cot = CustomObjectType.objects.get(slug="<your-slug>")
+   cot.get_model().objects.filter(pk=<row-pk>).delete()
+   PY
+   ```
+2. **Refresh the typed-tab list page** between Create and per-row Delete.
+   This worked reliably for non-polymorphic fields on earlier versions
+   and still often works on 0.5.0, but it is no longer guaranteed —
+   polymorphic-MultiObject rows can drift the model cache mid-flow.
+3. **Restart NetBox.** Clears `_model_cache` outright. Reliable but
+   heavyweight; use when shell access isn't available.
+
+#### Why polymorphic fields amplify the bug on 0.5.0
+
+`netbox-custom-objects` 0.5.0 introduced `is_polymorphic=True` Object /
+MultiObject fields. Each polymorphic Object field adds a
+`GenericForeignKey` descriptor and each polymorphic MultiObject field
+adds a per-field through model. Django's collector traverses every
+related model when collecting deletion dependencies, so each extra
+related-model is another opportunity to hit a stale class generation in
+`CustomObjectType._model_cache`. Plugin 2.4.0's discovery code walks
+those same descriptors to find inbound links (the original goal of
+2.4.0), which warms the cache enough that the upstream drift becomes
+deterministic rather than intermittent.
+
+#### Root cause (for the curious)
+
+Each Custom Object Type backs a dynamically-generated Django model
+(`Table<N>Model`), and the class registry can rebuild between requests
+(or during a request that touches `get_model(no_cache=True)`). Django's
+`Collector` then sees the queryset's model class on one side and a
+related-field descriptor's `.to` pointing at a *different copy of the
+same class name* on the other — its identity check raises `ValueError`.
+PR #501 fixes the symptom by overriding
+`CustomObjectDeleteView._get_dependent_objects` to filter through-table
+entries out of the collector's dependency walk before the identity check
+runs. This plugin does not override delete or model caching and cannot
+patch the bug from its own code.
+
+#### Cosmetic follow-up on patched builds
+
+On builds that already contain PR #501, the delete-success toast for
+some dynamic models renders as `"Deleted <Type> <Type> None"` — the
+patched view reads `str(obj)` *after* the row's deletion, so the
+dynamic model's primary field returns `None`. Models whose `__str__`
+captures the display value before delete are unaffected. This is a
+cosmetic, post-fix upstream issue; it does not affect the delete
+itself.
 
 ## Support
 
