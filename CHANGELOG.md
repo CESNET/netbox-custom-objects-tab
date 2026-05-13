@@ -5,6 +5,80 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.0] - 2026-05-12
+
+### Added
+
+- **Polymorphic Object / MultiObject field support**
+  ([#12](https://github.com/CESNET/netbox-custom-objects-tab/issues/12)) —
+  `netbox-custom-objects` v0.5.0 introduced `is_polymorphic=True` fields
+  whose targets live in the `related_object_types` M2M (and, for MultiObject,
+  in a per-field through table keyed by `(source_id, content_type_id, object_id)`).
+  The plugin's discovery logic previously filtered only on the single-FK
+  `related_object_type`, so polymorphic links were invisible: tabs disappeared
+  from referenced hosts (Device, Interface, Site, other CO Types) until the
+  field was switched back to non-polymorphic. Both tab styles now mirror
+  upstream's `CustomObjectLink.left_page` query shape — a non-polymorphic
+  queryset plus a polymorphic queryset, with per-field branching into four
+  reverse lookups (FK column, GFK `(content_type_id, object_id)` pair, M2M,
+  polymorphic through table).
+- **Polymorphic-field "Add *Type*" toolbar on typed tabs** — the toolbar
+  shortcut now works for polymorphic Object and MultiObject fields using
+  upstream's add-view sub-field prefill format: `?<name>__ct=<host_ct>&<name>__obj=<host_pk>`
+  for polymorphic Object, and `?<name>__<host_app>__<host_model>=<host_pk>`
+  for polymorphic MultiObject (the upstream form synthesizes one
+  `DynamicModelMultipleChoiceField` per allowed target type; we fill only
+  the one matching the host). The previous behaviour silently skipped the
+  Add link for polymorphic fields.
+
+### Changed
+
+- **Minimum `netbox-custom-objects` is now 0.5.0.** Enforced at startup:
+  `PluginConfig.ready()` probes for the `is_polymorphic` model field and
+  raises `ImproperlyConfigured` with a clear upgrade message if the
+  installed upstream is older. The check is behaviour-based (looks for the
+  field directly, not a version string) so it remains correct against forks
+  and pre-release tags. The pre-0.5 compat shims (`getattr` guards, module
+  feature probes) have been removed from both `combined.py` and `typed.py`.
+
+### Known Issues
+
+- **Upstream Delete bug on `netbox-custom-objects == 0.5.0` (fixed in 0.5.1).**
+  Deleting a Custom Object via the NetBox UI on 0.5.0 can raise
+  `ValueError: Cannot query "...": Must be "Table<N>Model" instance.` from
+  `CustomObjectDeleteView._get_dependent_objects`. The same crash also hits
+  `CustomObjectBulkDeleteView` (NetBox's generic `BulkDeleteView.post()`
+  iterates and calls `obj.delete()` per row — same code path), so
+  **Bulk Delete is NOT a workaround** (2.3.0 README claim corrected).
+  **Resolution:** upgrade upstream — PR
+  [#501](https://github.com/netboxlabs/netbox-custom-objects/pull/501)
+  (merged into `main` 2026-05-11) eliminates the entire bug class. As of
+  the 2.4.0 release date, no `0.5.1` release tag exists yet; install from
+  `main` (`pip install git+...@main`) or pin to `>=0.5.1` once tagged.
+  Adjacent fixes for related drift paths (#504, #505, #510) also ship in
+  `main` / `0.5.1`.
+- **Polymorphic-MultiObject rows amplify the failure rate on 0.5.0.** Each
+  polymorphic Object field adds a `GenericForeignKey` descriptor and each
+  polymorphic MultiObject field adds a per-field through model; Django's
+  collector traverses every related model during deletion, so polymorphic
+  rows give the drift more chances to land. Plugin 2.4.0's discovery code
+  walks these descriptors (the original goal of 2.4.0) and warms the
+  cache enough that the upstream drift becomes deterministic rather than
+  intermittent on 0.5.0.
+- **Workarounds for installs that cannot upgrade yet:** `manage.py shell`
+  direct delete (single-process model cache, no drift — see README) or
+  `systemctl restart netbox` (clears the cache). No UI-side workaround
+  exists for 0.5.0.
+- **Root cause is upstream** (`netbox-custom-objects` dynamic-model caching).
+  This plugin does not override delete or model caching and cannot fix it
+  from its own code; PR #501 fixes it inside upstream's delete view.
+- **Cosmetic post-fix issue on patched builds.** On builds containing
+  PR #501 (upstream `main` / forthcoming 0.5.1), the delete-success toast
+  for some dynamic models renders as `"Deleted <Type> <Type> None"` — the
+  patched view calls `str(obj)` *after* the row's deletion, so the
+  primary field returns `None`. Cosmetic only; the delete itself works.
+  Worth a small upstream follow-up issue but not a blocker.
+
 ## [2.3.0] - 2026-05-12
 
 ### Added
