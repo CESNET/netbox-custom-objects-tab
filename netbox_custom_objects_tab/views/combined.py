@@ -56,8 +56,13 @@ def _iter_linked_fields(instance):
     content_type = ContentType.objects.get_for_model(instance._meta.model)
     type_choices = [CustomFieldTypeChoices.TYPE_OBJECT, CustomFieldTypeChoices.TYPE_MULTIOBJECT]
 
+    # is_polymorphic=False keeps the two querysets disjoint — a row with
+    # related_object_type set AND is_polymorphic=True (a legacy misconfig:
+    # is_polymorphic is immutable upstream but related_object_type isn't
+    # nulled when toggled) would otherwise be yielded twice.
     non_poly = CustomObjectTypeField.objects.filter(
         related_object_type=content_type,
+        is_polymorphic=False,
         type__in=type_choices,
     ).select_related("custom_object_type")
 
