@@ -117,7 +117,14 @@ class TestCountLinkedCustomObjects:
             patch("netbox_custom_objects_tab.views.combined.ContentType") as mock_ct,
         ):
             mock_ct.objects.get_for_model.return_value = MagicMock()
-            mock_cotf.objects.filter.return_value.select_related.return_value = mock_fields
+            # _iter_linked_fields makes two separate filter() calls (non-poly FK,
+            # then poly M2M). Configure them as distinct querysets so the second
+            # one returns no fields and we don't double-count.
+            non_poly_qs = MagicMock()
+            non_poly_qs.select_related.return_value = mock_fields
+            poly_qs = MagicMock()
+            poly_qs.select_related.return_value = []
+            mock_cotf.objects.filter.side_effect = [non_poly_qs, poly_qs]
 
             from netbox_custom_objects_tab.views.combined import _count_linked_custom_objects
 

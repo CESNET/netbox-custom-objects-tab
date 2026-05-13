@@ -5,6 +5,7 @@ Smoke/unit tests for netbox_custom_objects_tab.views.typed.
 import logging
 from unittest.mock import MagicMock, patch
 
+import pytest
 from extras.choices import CustomFieldTypeChoices, CustomFieldUIVisibleChoices
 from netbox_custom_objects.tables import CustomObjectTable
 
@@ -55,6 +56,7 @@ class TestCountForType:
                 ("ref_object", CustomFieldTypeChoices.TYPE_OBJECT),
                 ("ref_multi", CustomFieldTypeChoices.TYPE_MULTIOBJECT),
             ],
+            host_ct_id=10,
         )
         instance = MagicMock(pk=42)
 
@@ -78,6 +80,7 @@ class TestCountForType:
                 ("backup_device", CustomFieldTypeChoices.TYPE_OBJECT),
                 ("affected_devices", CustomFieldTypeChoices.TYPE_MULTIOBJECT),
             ],
+            host_ct_id=10,
         )
         instance = MagicMock(pk=42)
 
@@ -98,7 +101,7 @@ class TestCountForType:
         from netbox_custom_objects_tab.views.typed import _count_for_type
 
         cot, dynamic_model, _ = self._make_custom_object_type(distinct_count=999)
-        badge = _count_for_type(cot, [])
+        badge = _count_for_type(cot, [], host_ct_id=10)
         assert badge(MagicMock(pk=42)) is None
         # filter() must not be called when there are no fields to OR together
         assert dynamic_model.objects.filter.call_count == 0
@@ -109,7 +112,7 @@ class TestCountForType:
         cot = MagicMock()
         cot.get_model.side_effect = RuntimeError("broken model")
         cot.pk = 123
-        badge = _count_for_type(cot, [("ref_object", CustomFieldTypeChoices.TYPE_OBJECT)])
+        badge = _count_for_type(cot, [("ref_object", CustomFieldTypeChoices.TYPE_OBJECT)], host_ct_id=10)
         instance = MagicMock(pk=42)
 
         assert badge(instance) is None
@@ -362,7 +365,13 @@ class TestRegisterTypedTabs:
             patch("netbox_custom_objects_tab.views.typed.ContentType") as mock_ct,
             patch("netbox_custom_objects_tab.views.typed.register_model_view") as mock_register,
         ):
-            mock_cotf.objects.filter.return_value.select_related.return_value = [field1, field2]
+            # register_typed_tabs makes two filter() calls: non-poly fields
+            # (.select_related) and polymorphic fields (.select_related.prefetch_related).
+            non_poly_qs = MagicMock()
+            non_poly_qs.select_related.return_value = [field1, field2]
+            poly_qs = MagicMock()
+            poly_qs.select_related.return_value.prefetch_related.return_value = []
+            mock_cotf.objects.filter.side_effect = [non_poly_qs, poly_qs]
             mock_ct.objects.get_for_model.return_value = ct
             mock_register.return_value = lambda cls: cls
 
@@ -392,7 +401,11 @@ class TestRegisterTypedTabs:
             patch("netbox_custom_objects_tab.views.typed.ContentType") as mock_ct,
             patch("netbox_custom_objects_tab.views.typed.register_model_view") as mock_register,
         ):
-            mock_cotf.objects.filter.return_value.select_related.return_value = [field]
+            non_poly_qs = MagicMock()
+            non_poly_qs.select_related.return_value = [field]
+            poly_qs = MagicMock()
+            poly_qs.select_related.return_value.prefetch_related.return_value = []
+            mock_cotf.objects.filter.side_effect = [non_poly_qs, poly_qs]
             mock_ct.objects.get_for_model.return_value = ct
             mock_register.return_value = lambda cls: cls
 
@@ -423,7 +436,11 @@ class TestRegisterTypedTabs:
             patch("netbox_custom_objects_tab.views.typed.ContentType") as mock_ct,
             patch("netbox_custom_objects_tab.views.typed.register_model_view") as mock_register,
         ):
-            mock_cotf.objects.filter.return_value.select_related.return_value = [field]
+            non_poly_qs = MagicMock()
+            non_poly_qs.select_related.return_value = [field]
+            poly_qs = MagicMock()
+            poly_qs.select_related.return_value.prefetch_related.return_value = []
+            mock_cotf.objects.filter.side_effect = [non_poly_qs, poly_qs]
             mock_ct.objects.get_for_model.return_value = ct
             mock_register.return_value = lambda cls: cls
 
@@ -465,7 +482,10 @@ class TestRegisterTypedTabsLabelAndOrder:
 
         captured_field_infos = {}
 
-        def fake_make_view(model_cls, cot, field_infos, weight):
+        # _make_typed_tab_view's signature gained a 5th positional `host_ct_id`
+        # in 2.4.0 (used to build polymorphic Q-filters). Accept it here so the
+        # mock matches the call site, then capture field_infos for assertion.
+        def fake_make_view(model_cls, cot, field_infos, weight, host_ct_id):
             captured_field_infos["infos"] = list(field_infos)
             return MagicMock()
 
@@ -475,7 +495,11 @@ class TestRegisterTypedTabsLabelAndOrder:
             patch("netbox_custom_objects_tab.views.typed.register_model_view") as mock_register,
             patch("netbox_custom_objects_tab.views.typed._make_typed_tab_view", side_effect=fake_make_view),
         ):
-            mock_cotf.objects.filter.return_value.select_related.return_value = [field_b, field_a]
+            non_poly_qs = MagicMock()
+            non_poly_qs.select_related.return_value = [field_b, field_a]
+            poly_qs = MagicMock()
+            poly_qs.select_related.return_value.prefetch_related.return_value = []
+            mock_cotf.objects.filter.side_effect = [non_poly_qs, poly_qs]
             mock_ct.objects.get_for_model.return_value = ct
             mock_register.return_value = lambda cls: cls
 
@@ -520,6 +544,20 @@ class TestGetBaseTemplate:
 # _build_add_links
 # ---------------------------------------------------------------------------
 class TestBuildAddLinks:
+    @pytest.fixture(autouse=True)
+    def _patch_content_type(self):
+        # _build_add_links calls ContentType.objects.get_for_model(host._meta.model)
+        # unconditionally; patch it so MagicMock hosts don't reach the real ORM.
+        with patch("netbox_custom_objects_tab.views.typed.ContentType"):
+            yield
+
+    def _make_host(self, pk=42, app_label="dcim", model_name="device"):
+        host = MagicMock()
+        host.pk = pk
+        host._meta.app_label = app_label
+        host._meta.model_name = model_name
+        return host
+
     def test_returns_empty_when_reverse_fails(self):
         from django.urls import NoReverseMatch
 
@@ -528,7 +566,7 @@ class TestBuildAddLinks:
         with patch("netbox_custom_objects_tab.views.typed.reverse", side_effect=NoReverseMatch):
             links = _build_add_links(
                 "server",
-                42,
+                self._make_host(42),
                 [("device", CustomFieldTypeChoices.TYPE_OBJECT, "Device")],
                 "/dcim/devices/42/",
             )
@@ -543,7 +581,7 @@ class TestBuildAddLinks:
         ):
             links = _build_add_links(
                 "server",
-                42,
+                self._make_host(42),
                 [("device", CustomFieldTypeChoices.TYPE_OBJECT, "Device")],
                 "/dcim/devices/42/custom-objects-server/",
             )
@@ -566,7 +604,7 @@ class TestBuildAddLinks:
         ):
             links = _build_add_links(
                 "link",
-                7,
+                self._make_host(7),
                 [
                     ("primary_device", CustomFieldTypeChoices.TYPE_OBJECT, "Primary"),
                     ("backup_device", CustomFieldTypeChoices.TYPE_OBJECT, "Backup"),
@@ -591,7 +629,7 @@ class TestBuildAddLinks:
         ):
             links = _build_add_links(
                 "x",
-                1,
+                self._make_host(1),
                 [
                     ("device", CustomFieldTypeChoices.TYPE_OBJECT, "Device"),
                     ("device", CustomFieldTypeChoices.TYPE_MULTIOBJECT, "Device"),
@@ -610,7 +648,7 @@ class TestBuildAddLinks:
         ):
             links = _build_add_links(
                 "x",
-                1,
+                self._make_host(1),
                 [("device_ref", CustomFieldTypeChoices.TYPE_OBJECT, "")],
                 "/dcim/devices/1/",
             )
@@ -626,7 +664,7 @@ class TestBuildAddLinks:
         ):
             links = _build_add_links(
                 "x",
-                1,
+                self._make_host(1),
                 [("device", CustomFieldTypeChoices.TYPE_OBJECT)],
                 "/dcim/devices/1/",
             )
@@ -642,7 +680,7 @@ class TestBuildAddLinks:
         ):
             links = _build_add_links(
                 "x",
-                1,
+                self._make_host(1),
                 [("device", CustomFieldTypeChoices.TYPE_OBJECT, "Device")],
                 "/dcim/devices/1/custom-objects-x/?tag=foo&q=bar",
             )
