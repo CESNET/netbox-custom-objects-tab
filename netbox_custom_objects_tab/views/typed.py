@@ -309,11 +309,24 @@ def _make_typed_tab_view(model_class, custom_object_type, field_infos, weight, h
             # Build base queryset: union of all field filters for this type.
             # Polymorphic fields contribute Q(pk__in=<through subquery>) or a
             # (content_type_id, object_id) pair, both handled by _build_q_for_field.
+            #
+            # An empty Q() is the identity element of `|`, so filter(Q()) returns
+            # ALL rows. Track has_filter (mirrors _count_for_type) and short-circuit
+            # to .none() if every _build_q_for_field call returned an empty Q —
+            # otherwise an unresolvable through model or unknown field type would
+            # silently widen the tab to every row of the target type.
             q_filter = Q()
+            has_filter = False
             for info in field_infos:
-                q_filter |= _build_q_for_field(host_ct_id, instance.pk, info)
+                q = _build_q_for_field(host_ct_id, instance.pk, info)
+                if q.children:
+                    q_filter |= q
+                    has_filter = True
 
-            base_qs = dynamic_model.objects.filter(q_filter).distinct()
+            if has_filter:
+                base_qs = dynamic_model.objects.filter(q_filter).distinct()
+            else:
+                base_qs = dynamic_model.objects.none()
 
             # Apply filterset
             filterset_class = get_filterset_class(dynamic_model)
