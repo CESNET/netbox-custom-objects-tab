@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.1] - 2026-05-25
+
+### Fixed
+
+- **Active CSS class missing on Custom Object Journal/Changelog tabs**
+  ([#15](https://github.com/CESNET/netbox-custom-objects-tab/issues/15)) —
+  on Custom Object detail pages, clicking the Journal or Changelog tab
+  loaded the right page but never highlighted the clicked tab. Root cause
+  was the 2.1.0 template-override refactor (commit `37ccf6b`), which
+  replaced upstream's hardcoded Journal/Changelog `<li>` blocks with a
+  single `{% model_view_tabs object %}` call. Upstream
+  `CustomObjectJournalView` / `CustomObjectChangeLogView`
+  (`netbox_custom_objects/views.py:1321, 1393`) inject the literal
+  strings `"journal"` / `"changelog"` into the template context as the
+  active-tab marker, while `model_view_tabs`
+  (`utilities/templatetags/tabs.py:53`) computes
+  `is_active = active_tab == tab` where `tab` is a `ViewTab` *object*
+  registered for the model — the string-vs-object comparison is always
+  False, so the `active` class is never emitted. Verified still present
+  on `netboxlabs-netbox-custom-objects` 0.5.0 and 0.5.1 under NetBox
+  4.6.1. Fix renders Journal and Changelog as hardcoded `<li>` blocks
+  in the override template (matching upstream's pre-override markup,
+  with the string equality check) and introduces a new
+  `{% plugin_extra_tabs %}` template tag
+  (`netbox_custom_objects_tab/templatetags/custom_object_tab_tags.py`)
+  that mirrors `model_view_tabs` but skips the `journal` / `changelog`
+  actions — required because NetBox auto-registers `ObjectJournalView` /
+  `ObjectChangeLogView` for every ChangeLoggedModel subclass in
+  `netbox/models/features.py:737-742`, so without the filter the
+  registry-driven render would emit duplicate inert Journal/Changelog
+  tabs. Tab order is now Primary → combined/typed (registry) → Journal
+  → Changelog, which incidentally matches the natural ViewTab weight
+  ordering (combined=2000, typed=2100, Journal=5000, Changelog=10000)
+  and stays stable if upstream later switches their context to
+  `tab=self.tab` (at which point the hardcoded blocks and the custom
+  tag can be retired).
+
 ## [2.4.0] - 2026-05-12
 
 ### Added
