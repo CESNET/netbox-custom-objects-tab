@@ -26,27 +26,28 @@ Two tab modes are available:
 
 ## Requirements
 
-- NetBox 4.5.0 – 4.6.99
-- `netbox_custom_objects` plugin **≥ 0.5.0** installed and configured
-  (**≥ 0.5.1 strongly recommended** — 0.5.0 has an upstream Delete bug
-  that 0.5.1 fixes; see [Known Issues](#known-issues))
+- NetBox 4.5.2 – 4.6.99
+- `netbox_custom_objects` plugin **≥ 0.5.1** installed and configured
+  (0.5.0 had an upstream Delete bug fixed in 0.5.1; see [Known Issues](#known-issues))
 
 ## Compatibility
 
 | Plugin version | NetBox version | `netbox_custom_objects` version                                        |
 |----------------|----------------|------------------------------------------------------------------------|
-| 2.4.x          | 4.5.4+ / 4.6.x | **≥ 0.5.0 required** (≥ 0.5.1 strongly recommended — fixes Delete bug) |
+| 2.4.x          | 4.5.2+ / 4.6.x | **≥ 0.5.1 required**                                                   |
 | 2.3.x          | 4.5.4+ / 4.6.x | ≥ 0.4.6 (≥ 0.5.0 on 4.6)                                               |
 | 2.2.x          | 4.5.4+ / 4.6.x | ≥ 0.4.6 (≥ 0.5.0 on 4.6)                                               |
 | 2.1.x          | 4.5.4+         | ≥ 0.4.6                                                                |
 | 2.0.x          | 4.5.x          | ≥ 0.4.6                                                                |
 | 1.0.x          | 4.5.x          | ≥ 0.4.4                                                                |
 
-Plugin 2.4.x **enforces** the 0.5.0 minimum at startup: `PluginConfig.ready()`
-probes for the upstream `is_polymorphic` model field and raises
-`ImproperlyConfigured` with an upgrade message if the installed upstream is
-older. The check is behaviour-based (looks for the field, not a version
-string) so it stays correct across forks and pre-release tags.
+Plugin 2.4.x **enforces** the 0.5.1 minimum at startup: `PluginConfig.ready()`
+probes for the upstream `is_polymorphic` model field (introduced in 0.5.0)
+and raises `ImproperlyConfigured` with an upgrade message pointing at
+`>=0.5.1` if the installed upstream is older. The check is behaviour-based
+(looks for the field, not a version string) so it stays correct across forks
+and pre-release tags; the message advances to 0.5.1 because 2.4.x assumes
+the bug fixes shipped in that release.
 
 ## Installation
 

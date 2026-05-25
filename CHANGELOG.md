@@ -5,6 +5,77 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.1] - 2026-05-25
+
+### Changed
+
+- **Bumped supported version floors** to track upstream
+  `netbox-custom-objects` v0.5.1
+  ([release notes](https://github.com/netboxlabs/netbox-custom-objects/releases/tag/v0.5.1)):
+  - `PluginConfig.min_version`: `4.5.0` → **`4.5.2`** (mirrors upstream's
+    own NetBox floor bump in
+    [#511](https://github.com/netboxlabs/netbox-custom-objects/pull/511) —
+    keeps both gates consistent so a NetBox 4.5.0/4.5.1 host cannot end
+    up with our plugin loading while `netbox-custom-objects` itself
+    refuses to start).
+  - `netbox-custom-objects` runtime floor: **`≥ 0.5.1`** (was `≥ 0.5.0`).
+    The `ImproperlyConfigured` message in `PluginConfig.ready()` now
+    points users at `pip install -U 'netbox-custom-objects>=0.5.1'`. The
+    behavioural probe (`CustomObjectTypeField._meta.get_field("is_polymorphic")`)
+    is unchanged — it still keys off the 0.5.0 schema sentinel, since
+    no field added in 0.5.1 is a reliable runtime marker — but the
+    user-facing recommendation advances to 0.5.1, which fixes the
+    upstream Delete bug previously called out under
+    [Known Issues](README.md#known-issues) as well as several
+    cross-COT FK and M2M-deletion regressions.
+- **No code-logic changes** were required to follow v0.5.1.
+  `combined.py::_iter_linked_fields` and `typed.py::_build_q_for_field`
+  already filter by `instance.pk` (int) rather than by model instance,
+  so upstream's fix for issue
+  [#508](https://github.com/netboxlabs/netbox-custom-objects/issues/508)
+  (`CustomObjectLink.left_page()` rewrite from
+  `filter(**{field.name: target_obj})` to
+  `filter(**{f"{field.name}_id": target_obj.pk})`) does not affect us.
+  The M2M `path_infos` repair from
+  [#483](https://github.com/netboxlabs/netbox-custom-objects/issues/483)
+  is applied inside `CustomObjectType.get_model()`, which we call per
+  request, so we inherit the fix for free.
+
+### Fixed
+
+- **Active CSS class missing on Custom Object Journal/Changelog tabs**
+  ([#15](https://github.com/CESNET/netbox-custom-objects-tab/issues/15)) —
+  on Custom Object detail pages, clicking the Journal or Changelog tab
+  loaded the right page but never highlighted the clicked tab. Root cause
+  was the 2.1.0 template-override refactor (commit `37ccf6b`), which
+  replaced upstream's hardcoded Journal/Changelog `<li>` blocks with a
+  single `{% model_view_tabs object %}` call. Upstream
+  `CustomObjectJournalView` / `CustomObjectChangeLogView`
+  (`netbox_custom_objects/views.py:1321, 1393`) inject the literal
+  strings `"journal"` / `"changelog"` into the template context as the
+  active-tab marker, while `model_view_tabs`
+  (`utilities/templatetags/tabs.py:53`) computes
+  `is_active = active_tab == tab` where `tab` is a `ViewTab` *object*
+  registered for the model — the string-vs-object comparison is always
+  False, so the `active` class is never emitted. Verified still present
+  on `netboxlabs-netbox-custom-objects` 0.5.0 and 0.5.1 under NetBox
+  4.6.1. Fix renders Journal and Changelog as hardcoded `<li>` blocks
+  in the override template (matching upstream's pre-override markup,
+  with the string equality check) and introduces a new
+  `{% plugin_extra_tabs %}` template tag
+  (`netbox_custom_objects_tab/templatetags/custom_object_tab_tags.py`)
+  that mirrors `model_view_tabs` but skips the `journal` / `changelog`
+  actions — required because NetBox auto-registers `ObjectJournalView` /
+  `ObjectChangeLogView` for every ChangeLoggedModel subclass in
+  `netbox/models/features.py:737-742`, so without the filter the
+  registry-driven render would emit duplicate inert Journal/Changelog
+  tabs. Tab order is now Primary → combined/typed (registry) → Journal
+  → Changelog, which incidentally matches the natural ViewTab weight
+  ordering (combined=2000, typed=2100, Journal=5000, Changelog=10000)
+  and stays stable if upstream later switches their context to
+  `tab=self.tab` (at which point the hardcoded blocks and the custom
+  tag can be retired).
+
 ## [2.4.0] - 2026-05-12
 
 ### Added
