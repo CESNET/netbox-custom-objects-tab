@@ -11,7 +11,7 @@ class NetBoxCustomObjectsTabConfig(PluginConfig):
     author = "Jan Krupa"
     author_email = "jan.krupa@cesnet.cz"
     base_url = "custom-objects-tab"
-    min_version = "4.5.0"
+    min_version = "4.5.2"
     max_version = "4.6.99"
     default_settings = {
         # Per-type tabs: each Custom Object Type gets its own tab (opt-in, empty by default).
@@ -48,8 +48,8 @@ class NetBoxCustomObjectsTabConfig(PluginConfig):
             CustomObjectTypeField._meta.get_field("is_polymorphic")
         except FieldDoesNotExist as exc:
             raise ImproperlyConfigured(
-                "netbox-custom-objects-tab 2.4+ requires netbox-custom-objects>=0.5.0. "
-                "Upgrade with: pip install -U 'netbox-custom-objects>=0.5.0'"
+                "netbox-custom-objects-tab 2.4+ requires netbox-custom-objects>=0.5.1. "
+                "Upgrade with: pip install -U 'netbox-custom-objects>=0.5.1'"
             ) from exc
 
         from . import template_override, views

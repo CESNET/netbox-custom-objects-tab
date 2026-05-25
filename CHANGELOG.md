@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.4.1] - 2026-05-25
 
+### Changed
+
+- **Bumped supported version floors** to track upstream
+  `netbox-custom-objects` v0.5.1
+  ([release notes](https://github.com/netboxlabs/netbox-custom-objects/releases/tag/v0.5.1)):
+  - `PluginConfig.min_version`: `4.5.0` → **`4.5.2`** (mirrors upstream's
+    own NetBox floor bump in
+    [#511](https://github.com/netboxlabs/netbox-custom-objects/pull/511) —
+    keeps both gates consistent so a NetBox 4.5.0/4.5.1 host cannot end
+    up with our plugin loading while `netbox-custom-objects` itself
+    refuses to start).
+  - `netbox-custom-objects` runtime floor: **`≥ 0.5.1`** (was `≥ 0.5.0`).
+    The `ImproperlyConfigured` message in `PluginConfig.ready()` now
+    points users at `pip install -U 'netbox-custom-objects>=0.5.1'`. The
+    behavioural probe (`CustomObjectTypeField._meta.get_field("is_polymorphic")`)
+    is unchanged — it still keys off the 0.5.0 schema sentinel, since
+    no field added in 0.5.1 is a reliable runtime marker — but the
+    user-facing recommendation advances to 0.5.1, which fixes the
+    upstream Delete bug previously called out under
+    [Known Issues](README.md#known-issues) as well as several
+    cross-COT FK and M2M-deletion regressions.
+- **No code-logic changes** were required to follow v0.5.1.
+  `combined.py::_iter_linked_fields` and `typed.py::_build_q_for_field`
+  already filter by `instance.pk` (int) rather than by model instance,
+  so upstream's fix for issue
+  [#508](https://github.com/netboxlabs/netbox-custom-objects/issues/508)
+  (`CustomObjectLink.left_page()` rewrite from
+  `filter(**{field.name: target_obj})` to
+  `filter(**{f"{field.name}_id": target_obj.pk})`) does not affect us.
+  The M2M `path_infos` repair from
+  [#483](https://github.com/netboxlabs/netbox-custom-objects/issues/483)
+  is applied inside `CustomObjectType.get_model()`, which we call per
+  request, so we inherit the fix for free.
+
 ### Fixed
 
 - **Active CSS class missing on Custom Object Journal/Changelog tabs**
