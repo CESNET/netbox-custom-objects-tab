@@ -5,6 +5,65 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.0] - 2026-08-24
+
+### Changed
+
+- **netbox-custom-objects compatibility floor raised to 0.6.0**
+  ([release notes](https://github.com/netboxlabs/netbox-custom-objects/releases/tag/v0.6.0)).
+  The `PluginConfig.ready()` probe now checks for
+  `CustomObjectFieldTypeChoices.TYPE_COORDINATES` (added in 0.6.0) and
+  raises `ImproperlyConfigured` pointing at
+  `pip install -U 'netbox-custom-objects>=0.6.0'`. 0.5.x installs must
+  stay on plugin 2.4.1. NetBox floors are unchanged (4.5.2 – 4.6.99,
+  matching upstream 0.6.x).
+- **Regenerated the `customobject.html` template override from the
+  0.6.0 stock template.** The 2.4.x copy was based on 0.5.x and silently
+  dropped upstream features when run against 0.6.0. The refresh restores:
+  Contacts tab, Config Context tab (shown when the type has
+  `config_context_enabled`), owner display in the page header,
+  `coordinates` field rendering with a Map button, the polymorphic
+  M2M "Type" column in many-field cards, and the switch to the
+  `{% customfield_value %}` builtin tag. Our two insertions (the
+  `custom_object_tab_tags` load and `{% plugin_extra_tabs object %}`
+  between Contacts and Journal) are the only deltas from stock, and the
+  file intentionally keeps upstream formatting so future refreshes are a
+  plain `diff` against the new stock template.
+- **Typed-tab filter sidebar now reuses upstream's
+  `build_filterset_form_class()`** (`netbox_custom_objects.dynamic_forms`)
+  instead of a local replica — the same builder `CustomObjectListView`
+  uses, so the sidebar automatically gains the 0.6.0 owner filter.
+
+### Added
+
+- **Owner column and filter in the combined tab.** New "Owner" column
+  (sortable, hideable via Configure Table) showing the 0.6.0 ownership
+  field, plus an owner dropdown filter next to the tag filter. Owner rows
+  are fetched with `select_related("owner")` — no extra queries. Note:
+  the text search (`q`) still matches object/type/field only, not owner
+  names.
+
+### Fixed
+
+- **`TemplateDoesNotExist` (HTTP 500) on tab pages of models without a
+  per-model detail template** — e.g. `/ipam/vrfs/<pk>/custom-objects-<slug>/`
+  crashed with `TemplateDoesNotExist: ipam/vrf.html`, likewise MAC
+  addresses (`dcim/macaddress.html`) and any other model NetBox renders
+  via the generic detail view. `_get_base_template()` built
+  `"{app}/{model}.html"` unconditionally; it now delegates to NetBox's
+  `utilities.views.get_default_template()`, which falls back to
+  `generic/object.html` — the same resolution NetBox's own
+  Journal/Changelog tabs use. Affected both combined and typed tabs.
+- **Polymorphic filter fields missing from the typed-tab sidebar.** The
+  local filter-form replica assigned the dict returned by polymorphic
+  `get_filterform_field()` (one form field per allowed target type) to a
+  single form attribute, so those filters never rendered. Fixed by the
+  switch to upstream's `build_filterset_form_class()`, which expands the
+  dict correctly.
+- **Field column sort link broken in the combined tab** — a mismatched
+  template brace (`{{ sort_headers.field.url %}`) rendered the URL
+  expression as literal text instead of the sort link.
+
 ## [2.4.1] - 2026-05-25
 
 ### Changed

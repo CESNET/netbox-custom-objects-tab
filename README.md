@@ -27,13 +27,14 @@ Two tab modes are available:
 ## Requirements
 
 - NetBox 4.5.2 – 4.6.99
-- `netbox_custom_objects` plugin **≥ 0.5.1** installed and configured
-  (0.5.0 had an upstream Delete bug fixed in 0.5.1; see [Known Issues](#known-issues))
+- `netbox_custom_objects` plugin **≥ 0.6.0** installed and configured
+  (0.5.x installs must stay on plugin 2.4.1)
 
 ## Compatibility
 
 | Plugin version | NetBox version | `netbox_custom_objects` version                                        |
 |----------------|----------------|------------------------------------------------------------------------|
+| 2.5.x          | 4.5.2+ / 4.6.x | **≥ 0.6.0 required**                                                   |
 | 2.4.x          | 4.5.2+ / 4.6.x | **≥ 0.5.1 required**                                                   |
 | 2.3.x          | 4.5.4+ / 4.6.x | ≥ 0.4.6 (≥ 0.5.0 on 4.6)                                               |
 | 2.2.x          | 4.5.4+ / 4.6.x | ≥ 0.4.6 (≥ 0.5.0 on 4.6)                                               |
@@ -41,13 +42,15 @@ Two tab modes are available:
 | 2.0.x          | 4.5.x          | ≥ 0.4.6                                                                |
 | 1.0.x          | 4.5.x          | ≥ 0.4.4                                                                |
 
-Plugin 2.4.x **enforces** the 0.5.1 minimum at startup: `PluginConfig.ready()`
-probes for the upstream `is_polymorphic` model field (introduced in 0.5.0)
+Plugin 2.5.x **enforces** the 0.6.0 minimum at startup: `PluginConfig.ready()`
+probes for the upstream `coordinates` field type (introduced in 0.6.0)
 and raises `ImproperlyConfigured` with an upgrade message pointing at
-`>=0.5.1` if the installed upstream is older. The check is behaviour-based
-(looks for the field, not a version string) so it stays correct across forks
-and pre-release tags; the message advances to 0.5.1 because 2.4.x assumes
-the bug fixes shipped in that release.
+`>=0.6.0` if the installed upstream is older. The check is behaviour-based
+(looks for the feature, not a version string) so it stays correct across forks
+and pre-release tags. The hard floor exists because the plugin ships a copy of
+the 0.6.0 `customobject.html` detail template (Contacts and Config Context
+tabs, owner display, coordinates rendering), which reverses URLs that do not
+exist on 0.5.x.
 
 ## Installation
 
