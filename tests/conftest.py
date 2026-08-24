@@ -74,7 +74,14 @@ _mock(
 
 # --- utilities.* ---
 _mock("utilities")
-_mock("utilities.views", ViewTab=MagicMock(), register_model_view=MagicMock())
+# get_default_template mirrors NetBox's real fallback contract: "{app}/{model}.html"
+# when that template exists, else "generic/object.html". Tests patch it as needed.
+_mock(
+    "utilities.views",
+    ViewTab=MagicMock(),
+    register_model_view=MagicMock(),
+    get_default_template=MagicMock(side_effect=lambda model: f"{model._meta.app_label}/{model._meta.model_name}.html"),
+)
 _mock("utilities.paginator", EnhancedPaginator=MagicMock(), get_paginate_count=MagicMock())
 _mock("utilities.htmx", htmx_partial=MagicMock())
 _mock("utilities.forms")
@@ -129,5 +136,10 @@ _mock("netbox_custom_objects")
 _mock("netbox_custom_objects.models", CustomObjectTypeField=MagicMock())
 _mock("netbox_custom_objects.field_types", FIELD_TYPE_CLASS={})
 _mock("netbox_custom_objects.filtersets", get_filterset_class=MagicMock())
+_mock("netbox_custom_objects.dynamic_forms", build_filterset_form_class=MagicMock())
+_mock(
+    "netbox_custom_objects.choices",
+    CustomObjectFieldTypeChoices=MagicMock(TYPE_COORDINATES="coordinates"),
+)
 _CustomObjectTable = type("CustomObjectTable", (), {})
 _mock("netbox_custom_objects.tables", CustomObjectTable=_CustomObjectTable)
