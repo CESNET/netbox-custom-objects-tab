@@ -166,8 +166,8 @@ class TestCustomObjectsTabTable:
 
         self.cls = CustomObjectsTabTable
 
-    def test_default_columns_contains_all_six(self):
-        assert set(self.cls.Meta.default_columns) == {"type", "object", "value", "field", "tags", "actions"}
+    def test_default_columns_contains_all_seven(self):
+        assert set(self.cls.Meta.default_columns) == {"type", "object", "value", "owner", "field", "tags", "actions"}
 
     def test_actions_is_exempt(self):
         assert "actions" in self.cls.exempt_columns
