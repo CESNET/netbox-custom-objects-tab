@@ -34,23 +34,24 @@ class NetBoxCustomObjectsTabConfig(PluginConfig):
     def ready(self):
         super().ready()
 
-        # Hard gate: require netbox-custom-objects >= 0.5.0. We probe behaviour
-        # (the `is_polymorphic` model field added in 0.5.0) rather than parsing
-        # a version string, because forks and pre-release tags can carry any
-        # version label but either have or lack the field we actually use.
+        # Hard gate: require netbox-custom-objects >= 0.6.0. We probe behaviour
+        # (the `coordinates` field type added in 0.6.0) rather than parsing a
+        # version string, because forks and pre-release tags can carry any
+        # version label but either have or lack the feature we actually use.
+        # Our customobject.html override is a copy of the 0.6.0 stock template
+        # (Contacts/Config Context tabs, coordinates rendering, owner header),
+        # which reverses URLs that don't exist on 0.5.x — hence the hard floor.
         # Raising ImproperlyConfigured here aborts NetBox startup with a clean,
         # named error in the logs — preferable to letting a half-loaded plugin
-        # ImportError mid-request.
-        from django.core.exceptions import FieldDoesNotExist, ImproperlyConfigured
-        from netbox_custom_objects.models import CustomObjectTypeField
+        # NoReverseMatch mid-request.
+        from django.core.exceptions import ImproperlyConfigured
+        from netbox_custom_objects.choices import CustomObjectFieldTypeChoices
 
-        try:
-            CustomObjectTypeField._meta.get_field("is_polymorphic")
-        except FieldDoesNotExist as exc:
+        if not hasattr(CustomObjectFieldTypeChoices, "TYPE_COORDINATES"):
             raise ImproperlyConfigured(
-                "netbox-custom-objects-tab 2.4+ requires netbox-custom-objects>=0.5.1. "
-                "Upgrade with: pip install -U 'netbox-custom-objects>=0.5.1'"
-            ) from exc
+                "netbox-custom-objects-tab 2.5+ requires netbox-custom-objects>=0.6.0. "
+                "Upgrade with: pip install -U 'netbox-custom-objects>=0.6.0'"
+            )
 
         from . import template_override, views
 
