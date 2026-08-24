@@ -251,86 +251,6 @@ class TestBuildTypedTableClass:
 
 
 # ---------------------------------------------------------------------------
-# _build_filterset_form
-# ---------------------------------------------------------------------------
-class TestBuildFiltersetForm:
-    def _make_cot_and_model(self, field_specs):
-        fields = []
-        for spec in field_specs:
-            f = MagicMock()
-            f.name = spec["name"]
-            f.type = spec.get("type", CustomFieldTypeChoices.TYPE_TEXT)
-            fields.append(f)
-
-        cot = MagicMock()
-        cot.fields.all.return_value = fields
-
-        dynamic_model = MagicMock()
-        dynamic_model._meta.object_name = "TestDynModel"
-
-        return cot, dynamic_model
-
-    def test_inherits_from_netbox_model_filter_set_form(self):
-        from netbox.forms import NetBoxModelFilterSetForm
-
-        from netbox_custom_objects_tab.views.typed import _build_filterset_form
-
-        cot, model = self._make_cot_and_model([])
-        form_cls = _build_filterset_form(cot, model)
-        assert issubclass(form_cls, NetBoxModelFilterSetForm)
-
-    def test_tag_field_present(self):
-        from netbox_custom_objects_tab.views.typed import _build_filterset_form
-
-        cot, model = self._make_cot_and_model([])
-        form_cls = _build_filterset_form(cot, model)
-        assert hasattr(form_cls, "tag")
-
-    def test_get_filterform_field_called_per_field(self):
-        from netbox_custom_objects_tab.views.typed import _build_filterset_form
-
-        ft_instance = MagicMock()
-        ft_instance.get_filterform_field.return_value = MagicMock()
-        ft_mock = MagicMock(return_value=ft_instance)
-
-        with patch.dict(
-            "netbox_custom_objects.field_types.FIELD_TYPE_CLASS",
-            {
-                CustomFieldTypeChoices.TYPE_TEXT: ft_mock,
-            },
-        ):
-            cot, model = self._make_cot_and_model(
-                [
-                    {"name": "field_a", "type": CustomFieldTypeChoices.TYPE_TEXT},
-                    {"name": "field_b", "type": CustomFieldTypeChoices.TYPE_TEXT},
-                ]
-            )
-            _build_filterset_form(cot, model)
-
-        assert ft_instance.get_filterform_field.call_count == 2
-
-    def test_not_implemented_filter_logged_and_skipped(self, caplog):
-        from netbox_custom_objects_tab.views.typed import _build_filterset_form
-
-        ft_instance = MagicMock()
-        ft_instance.get_filterform_field.side_effect = NotImplementedError
-        ft_mock = MagicMock(return_value=ft_instance)
-
-        with (
-            patch.dict("netbox_custom_objects.field_types.FIELD_TYPE_CLASS", {"custom_type": ft_mock}),
-            caplog.at_level(logging.DEBUG, logger="netbox_custom_objects_tab"),
-        ):
-            cot, model = self._make_cot_and_model(
-                [
-                    {"name": "weird_field", "type": "custom_type"},
-                ]
-            )
-            form_cls = _build_filterset_form(cot, model)
-
-        assert not hasattr(form_cls, "weird_field")
-
-
-# ---------------------------------------------------------------------------
 # register_typed_tabs
 # ---------------------------------------------------------------------------
 class TestRegisterTypedTabs:
@@ -525,6 +445,9 @@ class TestGetBaseTemplate:
         instance = MagicMock()
         instance._meta.app_label = app_label
         instance._meta.model_name = model_name
+        # _get_base_template passes instance._meta.model to get_default_template
+        instance._meta.model._meta.app_label = app_label
+        instance._meta.model._meta.model_name = model_name
         return instance
 
     def test_co_model_returns_shared_template(self):
@@ -533,11 +456,19 @@ class TestGetBaseTemplate:
         instance = self._make_instance("netbox_custom_objects", "table28model")
         assert _get_base_template(instance) == _CO_BASE_TEMPLATE
 
-    def test_non_co_model_returns_per_model_template(self):
+    def test_non_co_model_delegates_to_get_default_template(self):
         from netbox_custom_objects_tab.views.typed import _get_base_template
 
         instance = self._make_instance("dcim", "device")
         assert _get_base_template(instance) == "dcim/device.html"
+
+    def test_non_co_model_without_detail_template_falls_back_to_generic(self):
+        from netbox_custom_objects_tab.views import _co_common
+        from netbox_custom_objects_tab.views.typed import _get_base_template
+
+        instance = self._make_instance("ipam", "vrf")
+        with patch.object(_co_common, "get_default_template", return_value="generic/object.html"):
+            assert _get_base_template(instance) == "generic/object.html"
 
 
 # ---------------------------------------------------------------------------

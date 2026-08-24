@@ -29,9 +29,17 @@
                         {% if 'value' in selected_columns %}
                             <th>{% trans "Value" %}</th>
                         {% endif %}
+                        {% if 'owner' in selected_columns %}
+                            <th>
+                                <a hx-get="{{ sort_headers.owner.url }}">
+                                    {% trans "Owner" %}
+                                    {% if sort_headers.owner.icon %}<i class="mdi mdi-{{ sort_headers.owner.icon }}"></i>{% endif %}
+                                </a>
+                            </th>
+                        {% endif %}
                         {% if 'field' in selected_columns %}
                             <th>
-                                <a hx-get="{{ sort_headers.field.url %}">
+                                <a hx-get="{{ sort_headers.field.url }}">
                                     {% trans "Field" %}
                                     {% if sort_headers.field.icon %}<i class="mdi mdi-{{ sort_headers.field.icon }}"></i>{% endif %}
                                 </a>
@@ -83,6 +91,7 @@
                                     {% endif %}
                                 </td>
                             {% endif %}
+                            {% if 'owner' in selected_columns %}<td>{{ obj.owner|linkify|placeholder }}</td>{% endif %}
                             {% if 'field' in selected_columns %}<td>{{ field }}</td>{% endif %}
                             {% if 'tags' in selected_columns %}
                                 <td>
@@ -117,7 +126,7 @@
         </div>
     {% else %}
         <div class="card-body text-muted">
-            {% if q or type_slug or tag_slug %}
+            {% if q or type_slug or tag_slug or owner_id %}
                 {% trans "No custom objects match your filters." %}
             {% else %}
                 {% trans "No custom objects are linked to this object." %}

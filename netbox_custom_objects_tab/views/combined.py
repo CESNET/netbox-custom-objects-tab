@@ -27,6 +27,7 @@ class CustomObjectsTabTable(BaseTable):
     type = tables2.Column(verbose_name=_("Type"), orderable=False)
     object = tables2.Column(verbose_name=_("Object"), orderable=False)
     value = tables2.Column(verbose_name=_("Value"), orderable=False)
+    owner = tables2.Column(verbose_name=_("Owner"), orderable=False)
     field = tables2.Column(verbose_name=_("Field"), orderable=False)
     tags = tables2.Column(verbose_name=_("Tags"), orderable=False)
     actions = tables2.Column(verbose_name="", orderable=False)
@@ -34,8 +35,8 @@ class CustomObjectsTabTable(BaseTable):
     exempt_columns = ("actions",)
 
     class Meta(BaseTable.Meta):
-        fields = ("type", "object", "value", "field", "tags", "actions")
-        default_columns = ("type", "object", "value", "field", "tags", "actions")
+        fields = ("type", "object", "value", "owner", "field", "tags", "actions")
+        default_columns = ("type", "object", "value", "owner", "field", "tags", "actions")
 
 
 # Maximum number of related objects to show in the Value column for MULTIOBJECT fields.
@@ -118,7 +119,9 @@ def _get_linked_custom_objects(instance):
     """
     results = []
     for field, model, filter_kwargs in _iter_linked_fields(instance):
-        for obj in model.objects.filter(**filter_kwargs).prefetch_related("tags"):
+        # select_related("owner"): OwnerMixin is on the CustomObject base class
+        # (netbox-custom-objects 0.6.0+), so every dynamic model has the FK.
+        for obj in model.objects.filter(**filter_kwargs).select_related("owner").prefetch_related("tags"):
             results.append((obj, field))
     return results
 
@@ -173,6 +176,7 @@ def _get_field_value(obj, field):
 _SORT_KEYS = {
     "type": lambda t: str(t[1].custom_object_type).lower(),
     "object": lambda t: str(t[0]).lower(),
+    "owner": lambda t: str(t[0].owner or "").lower(),
     "field": lambda t: str(t[1]).lower(),
 }
 
@@ -252,6 +256,7 @@ def _make_tab_view(model_class, label="Custom Objects", weight=2000):
             q = request.GET.get("q", "")
             type_slug = request.GET.get("type", "")
             tag_slug = request.GET.get("tag", "").strip()
+            owner_id = request.GET.get("owner", "").strip()
             sort_col = request.GET.get("sort", "")
             sort_dir = request.GET.get("dir", "asc")
             per_page = request.GET.get("per_page", "")
@@ -266,12 +271,23 @@ def _make_tab_view(model_class, label="Custom Objects", weight=2000):
                         available_tags.append(t)
             available_tags.sort(key=lambda t: t.name.lower())
 
+            # Collect unique owners for the dropdown (always from the unfiltered list)
+            seen_owner_pks = set()
+            available_owners = []
+            for _obj, _field in linked_all:
+                if (owner := _obj.owner) and owner.pk not in seen_owner_pks:
+                    seen_owner_pks.add(owner.pk)
+                    available_owners.append(owner)
+            available_owners.sort(key=lambda o: str(o).lower())
+
             # Apply filters
             linked = _filter_linked_objects(linked_all, q)
             if type_slug:
                 linked = [(obj, field) for obj, field in linked if field.custom_object_type.slug == type_slug]
             if tag_slug:
                 linked = [(obj, field) for obj, field in linked if tag_slug in {t.slug for t in obj.tags.all()}]
+            if owner_id:
+                linked = [(obj, field) for obj, field in linked if str(obj.owner_id or "") == owner_id]
 
             # In-memory sort (applied after filters, before pagination)
             if sort_col in _SORT_KEYS:
@@ -295,12 +311,14 @@ def _make_tab_view(model_class, label="Custom Objects", weight=2000):
                 base_params["type"] = type_slug
             if tag_slug:
                 base_params["tag"] = tag_slug
+            if owner_id:
+                base_params["owner"] = owner_id
             if per_page:
                 base_params["per_page"] = per_page
             sort_base = urlencode(base_params)
 
             sort_headers = {
-                col: _sort_header(sort_base, col, sort_col, sort_dir) for col in ("type", "object", "field")
+                col: _sort_header(sort_base, col, sort_col, sort_dir) for col in ("type", "object", "owner", "field")
             }
 
             context = {
@@ -315,8 +333,10 @@ def _make_tab_view(model_class, label="Custom Objects", weight=2000):
                 "q": q,
                 "type_slug": type_slug,
                 "tag_slug": tag_slug,
+                "owner_id": owner_id,
                 "available_types": available_types,
                 "available_tags": available_tags,
+                "available_owners": available_owners,
                 "sort": sort_col,
                 "sort_dir": sort_dir,
                 "sort_headers": sort_headers,
