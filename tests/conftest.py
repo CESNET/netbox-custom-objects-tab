@@ -80,6 +80,7 @@ _mock(
     "utilities.views",
     ViewTab=MagicMock(),
     register_model_view=MagicMock(),
+    get_action_url=MagicMock(return_value="/x/"),
     get_default_template=MagicMock(side_effect=lambda model: f"{model._meta.app_label}/{model._meta.model_name}.html"),
 )
 _mock("utilities.paginator", EnhancedPaginator=MagicMock(), get_paginate_count=MagicMock())

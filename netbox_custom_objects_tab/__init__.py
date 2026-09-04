@@ -12,7 +12,7 @@ class NetBoxCustomObjectsTabConfig(PluginConfig):
     author_email = "jan.krupa@cesnet.cz"
     base_url = "custom-objects-tab"
     min_version = "4.5.2"
-    max_version = "4.6.99"
+    max_version = "4.7.99"
     default_settings = {
         # Per-type tabs: each Custom Object Type gets its own tab (opt-in, empty by default).
         "typed_models": [],
@@ -44,7 +44,21 @@ class NetBoxCustomObjectsTabConfig(PluginConfig):
         # Raising ImproperlyConfigured here aborts NetBox startup with a clean,
         # named error in the logs — preferable to letting a half-loaded plugin
         # NoReverseMatch mid-request.
+        from django.apps import apps
         from django.core.exceptions import ImproperlyConfigured
+
+        # netbox_custom_objects must actually be loaded, not merely installed.
+        # NetBox skips a plugin whose max_version is below the running release
+        # (netbox-custom-objects 0.6.0 caps at 4.6.99, so NetBox 4.7 drops it
+        # with only a warning); importing its models then fails with an opaque
+        # "isn't in INSTALLED_APPS" RuntimeError at startup.
+        if not apps.is_installed("netbox_custom_objects"):
+            raise ImproperlyConfigured(
+                "netbox-custom-objects-tab requires the netbox_custom_objects plugin to be loaded. "
+                "On NetBox 4.7+ that needs netbox-custom-objects>=0.6.1 (0.6.0 declares max_version 4.6.99 "
+                "and is skipped by NetBox). Upgrade with: pip install -U 'netbox-custom-objects>=0.6.1'"
+            )
+
         from netbox_custom_objects.choices import CustomObjectFieldTypeChoices
 
         if not hasattr(CustomObjectFieldTypeChoices, "TYPE_COORDINATES"):

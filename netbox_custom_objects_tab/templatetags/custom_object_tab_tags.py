@@ -54,7 +54,12 @@ def plugin_extra_tabs(context, instance):
                         "label": attrs["label"],
                         "badge": attrs["badge"],
                         "weight": attrs["weight"],
-                        "is_active": active_tab and active_tab == tab,
+                        # Identity check first; fall back to (label, weight) because the
+                        # generic CO-page URL (see views._inject_co_urls) is bound to the
+                        # first model's view class, whose ViewTab instance differs from the
+                        # registry entry for the page's actual model.
+                        "is_active": bool(active_tab)
+                        and (active_tab == tab or (active_tab.label, active_tab.weight) == (tab.label, tab.weight)),
                     }
                 )
 
