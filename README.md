@@ -3,10 +3,10 @@
 [![CI](https://github.com/CESNET/netbox-custom-objects-tab/actions/workflows/ci.yml/badge.svg)](https://github.com/CESNET/netbox-custom-objects-tab/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/netbox-custom-objects-tab)](https://pypi.org/project/netbox-custom-objects-tab/)
 [![Python](https://img.shields.io/pypi/pyversions/netbox-custom-objects-tab)](https://pypi.org/project/netbox-custom-objects-tab/)
-[![NetBox](https://img.shields.io/badge/NetBox-4.5.x_|_4.6.x-blue)](https://github.com/netbox-community/netbox)
+[![NetBox](https://img.shields.io/badge/NetBox-4.5.x_|_4.6.x_|_4.7.x-blue)](https://github.com/netbox-community/netbox)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 
-A NetBox 4.5.x / 4.6.x plugin that adds **Custom Objects** tabs to object detail pages,
+A NetBox 4.5.x / 4.6.x / 4.7.x plugin that adds **Custom Objects** tabs to object detail pages,
 showing Custom Object instances from the `netbox_custom_objects` plugin that reference
 those objects via OBJECT or MULTIOBJECT fields. Works on standard NetBox models (Device,
 Site, Rack, …), third-party plugin models, and Custom Object detail pages themselves
@@ -26,14 +26,16 @@ Two tab modes are available:
 
 ## Requirements
 
-- NetBox 4.5.2 – 4.6.99
+- NetBox 4.5.2 – 4.7.99
 - `netbox_custom_objects` plugin **≥ 0.6.0** installed and configured
-  (0.5.x installs must stay on plugin 2.4.1)
+  (**≥ 0.6.1 on NetBox 4.7** — 0.6.0 declares `max_version` 4.6.99 and is skipped by NetBox 4.7;
+  0.5.x installs must stay on plugin 2.4.1)
 
 ## Compatibility
 
 | Plugin version | NetBox version | `netbox_custom_objects` version                                        |
 |----------------|----------------|------------------------------------------------------------------------|
+| 2.6.x          | 4.5.2+ / 4.6.x / 4.7.x | **≥ 0.6.0 required** (≥ 0.6.1 on NetBox 4.7)                   |
 | 2.5.x          | 4.5.2+ / 4.6.x | **≥ 0.6.0 required**                                                   |
 | 2.4.x          | 4.5.2+ / 4.6.x | **≥ 0.5.1 required**                                                   |
 | 2.3.x          | 4.5.4+ / 4.6.x | ≥ 0.4.6 (≥ 0.5.0 on 4.6)                                               |

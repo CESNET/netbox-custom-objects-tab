@@ -5,6 +5,46 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.0] - 2026-09-04
+
+### Changed
+
+- **NetBox 4.7.x support** — `max_version` raised to 4.7.99 (supported range
+  is now 4.5.2 – 4.7.99). No plugin code needed to change: every NetBox API
+  and template this plugin uses (`ViewTab`, `register_model_view`,
+  `get_default_template`, `EnhancedPaginator`, `htmx_partial`,
+  `model_view_tabs`, `htmx/table.html`, `generic/object_list.html`) is
+  unchanged in 4.7, and none of the 4.7 removals (`{% querystring %}` with a
+  `request` argument, `registry['models']`, dict-style view `actions`, MPTT
+  columns) are used here. Verified against a local NetBox 4.7.0 instance
+  (combined and typed tabs on native and Custom Object pages, HTMX partials,
+  search, pagination, sorting).
+- **On NetBox 4.7 you need `netbox-custom-objects` ≥ 0.6.1**
+  ([release notes](https://github.com/netboxlabs/netbox-custom-objects/releases/tag/v0.6.1)).
+  0.6.0 declares `max_version` 4.6.99, so NetBox 4.7 skips it with a warning
+  and every plugin that depends on it fails. 4.5/4.6 installs can stay on 0.6.0.
+
+### Added
+
+- **Startup guard when `netbox_custom_objects` is not loaded.**
+  `PluginConfig.ready()` now raises `ImproperlyConfigured` with an actionable
+  message (`pip install -U 'netbox-custom-objects>=0.6.1'`) when the upstream
+  plugin is installed but was skipped by NetBox. Previously this surfaced as
+  an opaque `RuntimeError: Model class netbox_custom_objects.models.CustomObjectType
+  doesn't declare an explicit app_label and isn't in an application in
+  INSTALLED_APPS` during startup.
+
+### Fixed
+
+- **Combined/typed tab never highlighted as active on Custom Object detail
+  pages** for every Custom Object Type except the first one registered.
+  The generic CO-page URL injected by `_inject_co_urls()` is bound to the
+  first model's view class, so the `ViewTab` instance it puts in the template
+  context never equals the registry entry for the page's own model and
+  `plugin_extra_tabs` rendered the tab inactive. The tag now falls back to
+  `(label, weight)` equality when the identity check fails. Native-model
+  pages (Device, Site, …) were not affected.
+
 ## [2.5.0] - 2026-08-24
 
 ### Changed
