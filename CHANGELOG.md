@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.1] - 2026-09-14
+
+### Fixed
+
+- **`AttributeError: 'str' object has no attribute 'label'` on Custom Object
+  Journal / Changelog / Contacts / Config Context pages** (#19). Regression
+  from 2.6.0: the `(label, weight)` active-tab fallback in `plugin_extra_tabs`
+  assumed `context["tab"]` is always a `ViewTab`, but `netbox-custom-objects`'
+  journal/changelog/contacts/configcontext views set it to a plain string.
+  The tag now reads `label`/`weight` with `getattr`, so a string marker simply
+  yields "not active". Triggered on any CO detail page that has at least one
+  combined/typed tab registered (`netbox_custom_objects.*` in
+  `combined_models`/`typed_models`).
+- **Duplicate, never-active "Contacts" tab on Custom Object detail pages.**
+  NetBox (≥ 4.3) auto-registers an `ObjectContactsView` tab for every
+  `ContactsMixin` model, including Custom Object models; `plugin_extra_tabs`
+  rendered it next to the hardcoded Contacts tab. It is now excluded like
+  Journal/Changelog.
+
 ## [2.6.0] - 2026-09-04
 
 ### Changed

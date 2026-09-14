@@ -5,6 +5,8 @@ Unit tests for the plugin_extra_tabs template tag.
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import pytest
+
 
 def _tab(label, weight):
     return SimpleNamespace(
@@ -12,14 +14,14 @@ def _tab(label, weight):
     )
 
 
-def _render(active_tab, registered_tab):
+def _render(active_tab, registered_tab, name="custom_objects"):
     from netbox_custom_objects_tab.templatetags import custom_object_tab_tags as tags
 
     instance = SimpleNamespace(
         _meta=SimpleNamespace(app_label="netbox_custom_objects", model_name="table149model"), pk=1
     )
     view = SimpleNamespace(tab=registered_tab)
-    registry = {"views": {"netbox_custom_objects": {"table149model": [{"name": "custom_objects", "view": view}]}}}
+    registry = {"views": {"netbox_custom_objects": {"table149model": [{"name": name, "view": view}]}}}
     context = {"request": SimpleNamespace(user=SimpleNamespace(has_perm=lambda p: True)), "tab": active_tab}
     with patch.object(tags, "registry", registry), patch.object(tags, "get_action_url", return_value="/x/"):
         return tags.plugin_extra_tabs(context, instance)["tabs"]
@@ -41,3 +43,15 @@ def test_different_label_is_not_active():
 
 def test_no_active_tab_in_context():
     assert _render(None, _tab("Custom Objects", 2000))[0]["is_active"] is False
+
+
+@pytest.mark.parametrize("marker", ["journal", "changelog", "contacts", "configcontext"])
+def test_string_active_tab_marker_is_not_active(marker):
+    # Upstream CO journal/changelog/contacts/configcontext views set context["tab"] to a str (#19).
+    assert _render(marker, _tab("Custom Objects", 2000))[0]["is_active"] is False
+
+
+@pytest.mark.parametrize("name", ["contacts", "journal", "changelog"])
+def test_hardcoded_tab_names_are_skipped(name):
+    # NetBox auto-registers these; the CO template renders them by hand, so the tag must not duplicate them.
+    assert _render(None, _tab("Contacts", 5000), name=name) == []
