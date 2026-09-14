@@ -217,6 +217,11 @@ permissions internally via `get_permission_for_model()`.
 - `netbox_custom_objects` uses a single generic URL view (`CustomObjectView`) for all CO detail pages — it never calls `get_model_urls()` for dynamic models. `_inject_co_urls()` appends our tab URL patterns to `netbox_custom_objects.urls.urlpatterns` at `ready()` time (safe: Django loads URL conf lazily on first request)
 - `SavedFiltersMixin` lives at `netbox.forms.mixins`, not `extras.forms.mixins`
 - **Journal/Changelog tabs on CO pages must be hardcoded `<li>` blocks, not rendered via `{% model_view_tabs %}`.** Upstream's `CustomObjectJournalView`/`CustomObjectChangeLogView` (`views.py:1321, 1393`) set `tab="journal"`/`"changelog"` as a **string** in the template context, while `model_view_tabs` (`utilities/templatetags/tabs.py:53`) computes `is_active = active_tab == tab` where `tab` is a `ViewTab` object — comparison always False → no `active` class. NetBox auto-registers Journal/Changelog views for ChangeLoggedModel subclasses in `netbox/models/features.py:737-742`, so `model_view_tabs` *will* render them, just never as active. Workaround: hardcode `<li>` for Journal/Changelog (string comparison works), and use our `{% plugin_extra_tabs %}` tag (`templatetags/custom_object_tab_tags.py`) instead of `model_view_tabs` to render combined/typed tabs while filtering out journal/changelog (otherwise duplicate inert tabs appear). Fix landed for issue #15.
+- **`context["tab"]` on CO detail pages may be a plain `str`** (`"journal"`, `"changelog"`,
+  `"contacts"`, `"configcontext"` — set by upstream's hand-rolled views). `plugin_extra_tabs` must
+  read `label`/`weight` off it with `getattr`, never attribute access (issue #19, regression in 2.6.0).
+  NetBox (≥ 4.3) also auto-registers a `contacts` ViewTab (`netbox/models/features.py`, next to
+  journal/changelog), so `contacts` is in `_HARDCODED_TAB_NAMES` too — otherwise a duplicate tab renders.
 
 ## Critical Reference Files
 

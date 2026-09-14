@@ -8,14 +8,14 @@ __all__ = ("plugin_extra_tabs",)
 
 register = template.Library()
 
-# NetBox's `extras` framework auto-registers ObjectJournalView/ObjectChangeLogView
+# NetBox auto-registers ObjectContactsView/ObjectJournalView/ObjectChangeLogView
 # for every model that supports them (see netbox/models/features.py). On Custom
-# Object detail pages we render those two tabs as hardcoded <li> blocks instead,
-# because upstream's CustomObjectJournalView/CustomObjectChangeLogView put the
-# string "journal"/"changelog" in the template context as the active-tab marker,
-# which `model_view_tabs` cannot match against its ViewTab object. Filtering them
-# out here prevents duplicate, never-active tabs from being rendered.
-_HARDCODED_TAB_NAMES = frozenset({"journal", "changelog"})
+# Object detail pages we render those tabs as hardcoded <li> blocks instead,
+# because upstream's CustomObjectContactsView/JournalView/ChangeLogView put the
+# string "contacts"/"journal"/"changelog" in the template context as the
+# active-tab marker, which `model_view_tabs` cannot match against its ViewTab
+# object. Filtering them out here prevents duplicate, never-active tabs.
+_HARDCODED_TAB_NAMES = frozenset({"contacts", "journal", "changelog"})
 
 
 @register.inclusion_tag("tabs/model_view_tabs.html", takes_context=True)
@@ -34,6 +34,11 @@ def plugin_extra_tabs(context, instance):
     except KeyError:
         views = []
 
+    active_tab = context.get("tab")
+    # Upstream's CO journal/changelog/contacts/configcontext views put a plain str in
+    # context["tab"]; only a ViewTab has label/weight (issue #19).
+    active_key = (getattr(active_tab, "label", None), getattr(active_tab, "weight", None))
+
     for config in views:
         if config["name"] in _HARDCODED_TAB_NAMES:
             continue
@@ -42,7 +47,6 @@ def plugin_extra_tabs(context, instance):
             if tab.permission and not user.has_perm(tab.permission):
                 continue
             if attrs := tab.render(instance):
-                active_tab = context.get("tab")
                 try:
                     url = get_action_url(instance, action=config["name"], kwargs={"pk": instance.pk})
                 except NoReverseMatch:
@@ -58,8 +62,7 @@ def plugin_extra_tabs(context, instance):
                         # generic CO-page URL (see views._inject_co_urls) is bound to the
                         # first model's view class, whose ViewTab instance differs from the
                         # registry entry for the page's actual model.
-                        "is_active": bool(active_tab)
-                        and (active_tab == tab or (active_tab.label, active_tab.weight) == (tab.label, tab.weight)),
+                        "is_active": active_tab == tab or active_key == (tab.label, tab.weight),
                     }
                 )
 
