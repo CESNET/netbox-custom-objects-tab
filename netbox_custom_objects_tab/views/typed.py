@@ -16,11 +16,23 @@ from netbox_custom_objects.dynamic_forms import build_filterset_form_class
 from netbox_custom_objects.filtersets import get_filterset_class
 from netbox_custom_objects.models import CustomObjectTypeField
 from netbox_custom_objects.tables import CustomObjectTable
-from utilities.views import ViewTab, register_model_view
-
-from ._co_common import _CO_BASE_TEMPLATE, _CUSTOM_OBJECTS_APP, _get_base_template  # noqa: F401
+from utilities.views import ViewTab, get_default_template, register_model_view
 
 logger = logging.getLogger("netbox_custom_objects_tab")
+
+_CUSTOM_OBJECTS_APP = "netbox_custom_objects"
+# Dynamic CO models use a single shared detail template; per-model templates don't exist.
+_CO_BASE_TEMPLATE = "netbox_custom_objects/customobject.html"
+
+
+def _get_base_template(instance):
+    """Return the correct base_template for an object's detail page."""
+    if instance._meta.app_label == _CUSTOM_OBJECTS_APP:
+        return _CO_BASE_TEMPLATE
+    # Not every model has an "{app}/{model}.html" detail template (e.g. ipam/vrf.html
+    # and dcim/macaddress.html don't exist). get_default_template falls back to
+    # generic/object.html — the same resolution NetBox's Journal/Changelog tabs use.
+    return get_default_template(instance._meta.model)
 
 
 def _build_q_for_field(host_ct_id, instance_pk, field_info):

@@ -1,11 +1,11 @@
 import logging
 
 from django.apps import apps
+from django.http import Http404
+from django.shortcuts import get_object_or_404
 from netbox.plugins import get_plugin_config
 
-from ._co_common import _CUSTOM_OBJECTS_APP
-from .combined import register_combined_tabs
-from .typed import register_typed_tabs
+from .typed import _CUSTOM_OBJECTS_APP, register_typed_tabs
 
 logger = logging.getLogger("netbox_custom_objects_tab")
 
@@ -85,6 +85,35 @@ def _resolve_model_labels(labels):
     return result
 
 
+def _make_co_dispatcher(action_name):
+    """
+    Return a view function serving ``<str:custom_object_type>/<int:pk>/<path>/`` for
+    every Custom Object host type.
+
+    One typed-tab action (``custom_objects_<slug>``) may be registered on several host
+    CO models (Type A referencing both Type B and Type C). The URL pattern is shared, so
+    it cannot be bound to one model's view class: we resolve the host model from the
+    slug per request and dispatch to the view registered for exactly that model. That
+    also puts the host's own ``ViewTab`` in the template context, which is what
+    upstream's ``{% plugin_extra_tabs %}`` compares against to mark the tab active.
+    """
+    from netbox.registry import registry
+
+    def dispatch(request, custom_object_type, pk, **kwargs):
+        from netbox_custom_objects.models import CustomObjectType
+
+        cot = get_object_or_404(CustomObjectType, slug=custom_object_type)
+        model_name = cot.get_model()._meta.model_name
+        entries = registry["views"].get(_CUSTOM_OBJECTS_APP, {}).get(model_name, [])
+        view_cls = next((e["view"] for e in entries if e["name"] == action_name), None)
+        if view_cls is None:
+            raise Http404(f"No '{action_name}' tab registered for {custom_object_type}")
+        return view_cls.as_view()(request, custom_object_type=custom_object_type, pk=pk, **kwargs)
+
+    dispatch.__name__ = f"{action_name}_co_dispatch"
+    return dispatch
+
+
 def _inject_co_urls():
     """
     Inject URL patterns for our tab views into netbox_custom_objects.urls.
@@ -97,8 +126,7 @@ def _inject_co_urls():
 
     The URL names follow CustomObject._get_viewname():
       ``plugins:netbox_custom_objects:customobject_{action}``
-    which means we need names like ``customobject_custom_objects`` and
-    ``customobject_custom_objects_{slug}`` inside netbox_custom_objects.urls.
+    so each typed tab gets ``customobject_custom_objects_{slug}``.
     """
     try:
         import netbox_custom_objects.urls as co_urls
@@ -107,27 +135,22 @@ def _inject_co_urls():
     except ImportError:
         return
 
-    co_app = _CUSTOM_OBJECTS_APP
-    # Collect all tab view classes our plugin registered for CO dynamic models
-    # from the global registry, keyed by their action name.
-    co_views_by_name = {}  # action_name -> view_class
-    for model_name, view_entries in registry["views"].get(co_app, {}).items():
+    # Action names of the typed-tab views we registered on CO dynamic models.
+    action_names = set()
+    for model_name, view_entries in registry["views"].get(_CUSTOM_OBJECTS_APP, {}).items():
         if not model_name.startswith("table"):
             continue
         for entry in view_entries:
-            name = entry["name"]
-            view_cls = entry["view"]
-            # Only inject views we registered (combined / typed tab views)
-            if name.startswith("custom_objects") and name not in co_views_by_name:
-                co_views_by_name[name] = (entry["path"], view_cls)
+            if entry["name"].startswith("custom_objects_"):
+                action_names.add((entry["name"], entry["path"]))
 
     existing_names = {p.name for p in co_urls.urlpatterns if hasattr(p, "name") and p.name}
-    for action_name, (url_path_str, view_cls) in co_views_by_name.items():
+    for action_name, url_path_str in sorted(action_names):
         url_name = f"customobject_{action_name}"
         if url_name in existing_names:
             continue
         full_path = f"<str:custom_object_type>/<int:pk>/{url_path_str}/"
-        co_urls.urlpatterns.append(url_path(full_path, view_cls.as_view(), name=url_name))
+        co_urls.urlpatterns.append(url_path(full_path, _make_co_dispatcher(action_name), name=url_name))
         logger.debug("injected URL pattern '%s'", url_name)
 
 
@@ -164,7 +187,7 @@ def _deduplicate_registry():
 
 def register_tabs():
     """
-    Read plugin config and register both combined and typed tabs.
+    Read plugin config and register the typed (per Custom Object Type) tabs.
     Called from AppConfig.ready().
 
     All registration must happen synchronously here: NetBox builds each model's
@@ -176,33 +199,25 @@ def register_tabs():
 
     Earlier versions deferred typed-tab registration to the first HTTP request
     (commit 5bf09c3, PR #4) to silence DB-access warnings from Django and
-    netbox_branching.  That broke typed-tab URL routing entirely — the Add-button
-    feature in 2.3.0 was never reachable on a deployment.  See 2.3.0 release notes.
+    netbox_branching.  That broke typed-tab URL routing entirely.  See 2.3.0 notes.
 
     The ``OperationalError`` / ``ProgrammingError`` safety net inside
     ``register_typed_tabs`` covers the ``manage.py migrate`` / fresh-DB case.
     """
     try:
-        combined_labels = get_plugin_config("netbox_custom_objects_tab", "combined_models")
-        combined_label = get_plugin_config("netbox_custom_objects_tab", "combined_label")
-        combined_weight = get_plugin_config("netbox_custom_objects_tab", "combined_weight")
         typed_labels = get_plugin_config("netbox_custom_objects_tab", "typed_models")
         typed_weight = get_plugin_config("netbox_custom_objects_tab", "typed_weight")
     except Exception:
         logger.exception("Could not read netbox_custom_objects_tab plugin config")
         return
 
-    combined_models = []
-    if combined_labels:
-        combined_models = _resolve_model_labels(combined_labels)
-        register_combined_tabs(combined_models, combined_label, combined_weight)
+    if not typed_labels:
+        return
 
-    typed_models = []
-    if typed_labels:
-        typed_models = _resolve_model_labels(typed_labels)
-        register_typed_tabs(typed_models, typed_weight)
+    typed_models = _resolve_model_labels(typed_labels)
+    register_typed_tabs(typed_models, typed_weight)
 
-    if any(m._meta.app_label == _CUSTOM_OBJECTS_APP for m in combined_models + typed_models):
+    if any(m._meta.app_label == _CUSTOM_OBJECTS_APP for m in typed_models):
         _inject_co_urls()
 
     _deduplicate_registry()

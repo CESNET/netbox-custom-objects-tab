@@ -463,7 +463,7 @@ class TestGetBaseTemplate:
         assert _get_base_template(instance) == "dcim/device.html"
 
     def test_non_co_model_without_detail_template_falls_back_to_generic(self):
-        from netbox_custom_objects_tab.views import _co_common
+        from netbox_custom_objects_tab.views import typed as _co_common
         from netbox_custom_objects_tab.views.typed import _get_base_template
 
         instance = self._make_instance("ipam", "vrf")

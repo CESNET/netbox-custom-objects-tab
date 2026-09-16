@@ -54,61 +54,58 @@ class TestResolveModelLabels:
 
 
 class TestRegisterTabs:
-    def test_dispatches_combined_and_typed_tabs_synchronously(self):
-        """register_tabs() registers BOTH combined and typed tabs synchronously
-        in ready(). Registration must be synchronous because NetBox builds each
-        model's URLconf on the first resolve() call by snapshotting
-        registry['views']; anything added after that has no URL pattern.
-        See 2.3.0 fix.
+    def test_registers_typed_tabs_synchronously(self):
+        """register_tabs() registers typed tabs synchronously in ready().
+        Registration must be synchronous because NetBox builds each model's
+        URLconf on the first resolve() call by snapshotting registry['views'];
+        anything added after that has no URL pattern. See 2.3.0 fix.
         """
         from netbox_custom_objects_tab import views
 
-        combined_models = [MagicMock()]
         typed_models = [MagicMock()]
-        combined_models[0]._meta.app_label = "dcim"
         typed_models[0]._meta.app_label = "ipam"
+        config_map = {"typed_models": ["ipam.prefix"], "typed_weight": 2100}
 
-        config_map = {
-            "combined_models": ["dcim.device"],
-            "combined_label": "Custom Objects",
-            "combined_weight": 2000,
-            "typed_models": ["ipam.prefix"],
-            "typed_weight": 2100,
-        }
-
-        # _resolve_model_labels is called twice (combined, then typed); return
-        # different lists for each call.
         with (
             patch.object(views, "get_plugin_config", side_effect=lambda _plugin, key: config_map[key]),
-            patch.object(views, "_resolve_model_labels", side_effect=[combined_models, typed_models]),
-            patch.object(views, "register_combined_tabs") as register_combined,
+            patch.object(views, "_resolve_model_labels", return_value=typed_models),
             patch.object(views, "register_typed_tabs") as register_typed,
             patch.object(views, "_inject_co_urls") as inject_co_urls,
             patch.object(views, "_deduplicate_registry") as dedup,
         ):
             views.register_tabs()
 
-        register_combined.assert_called_once_with(combined_models, "Custom Objects", 2000)
         register_typed.assert_called_once_with(typed_models, 2100)
-        # No CO models in either list → CO URL injection skipped.
+        # No CO models → CO URL injection skipped.
         inject_co_urls.assert_not_called()
         dedup.assert_called_once()
 
-    def test_skips_dispatch_when_configured_model_lists_are_empty(self):
+    def test_injects_co_urls_when_a_custom_object_model_is_configured(self):
         from netbox_custom_objects_tab import views
 
-        config_map = {
-            "combined_models": [],
-            "combined_label": "Custom Objects",
-            "combined_weight": 2000,
-            "typed_models": [],
-            "typed_weight": 2100,
-        }
+        co_model = MagicMock()
+        co_model._meta.app_label = "netbox_custom_objects"
+        config_map = {"typed_models": ["netbox_custom_objects.*"], "typed_weight": 2100}
+
+        with (
+            patch.object(views, "get_plugin_config", side_effect=lambda _plugin, key: config_map[key]),
+            patch.object(views, "_resolve_model_labels", return_value=[co_model]),
+            patch.object(views, "register_typed_tabs"),
+            patch.object(views, "_inject_co_urls") as inject_co_urls,
+            patch.object(views, "_deduplicate_registry"),
+        ):
+            views.register_tabs()
+
+        inject_co_urls.assert_called_once()
+
+    def test_skips_dispatch_when_typed_models_is_empty(self):
+        from netbox_custom_objects_tab import views
+
+        config_map = {"typed_models": [], "typed_weight": 2100}
 
         with (
             patch.object(views, "get_plugin_config", side_effect=lambda _plugin, key: config_map[key]),
             patch.object(views, "_resolve_model_labels") as resolve_labels,
-            patch.object(views, "register_combined_tabs") as register_combined,
             patch.object(views, "register_typed_tabs") as register_typed,
             patch.object(views, "_inject_co_urls"),
             patch.object(views, "_deduplicate_registry"),
@@ -116,7 +113,6 @@ class TestRegisterTabs:
             views.register_tabs()
 
         resolve_labels.assert_not_called()
-        register_combined.assert_not_called()
         register_typed.assert_not_called()
 
     def test_config_exception_is_handled(self, caplog):
@@ -124,10 +120,65 @@ class TestRegisterTabs:
 
         with (
             patch.object(views, "get_plugin_config", side_effect=RuntimeError("boom")),
-            patch.object(views, "register_combined_tabs") as register_combined,
+            patch.object(views, "register_typed_tabs") as register_typed,
         ):
             with caplog.at_level(logging.ERROR, logger="netbox_custom_objects_tab"):
                 views.register_tabs()
 
-        register_combined.assert_not_called()
+        register_typed.assert_not_called()
         assert any("Could not read netbox_custom_objects_tab plugin config" in r.message for r in caplog.records)
+
+
+class TestCoDispatcher:
+    """
+    The CO-page URL `<slug>/<pk>/custom-objects-<x>/` is shared by every host
+    Custom Object model, so it must resolve the host model from the slug per
+    request and dispatch to the view registered for that model — not to the
+    first model's view class (which would load the wrong object and put the
+    wrong ViewTab in the context).
+    """
+
+    def test_dispatches_to_view_registered_for_slug_model(self):
+        from netbox.registry import registry
+
+        from netbox_custom_objects_tab import views
+
+        view_b = MagicMock(name="view_b")
+        view_c = MagicMock(name="view_c")
+        registry["views"]["netbox_custom_objects"] = {
+            "table28model": [{"name": "custom_objects_type-a", "path": "x", "view": view_c}],
+            "table29model": [{"name": "custom_objects_type-a", "path": "x", "view": view_b}],
+        }
+        cot = MagicMock()
+        cot.get_model.return_value._meta.model_name = "table29model"
+        request = MagicMock()
+
+        try:
+            with patch.object(views, "get_object_or_404", return_value=cot):
+                dispatch = views._make_co_dispatcher("custom_objects_type-a")
+                response = dispatch(request, custom_object_type="type-b", pk=5)
+        finally:
+            registry["views"].pop("netbox_custom_objects", None)
+
+        view_b.as_view.return_value.assert_called_once_with(request, custom_object_type="type-b", pk=5)
+        view_c.as_view.assert_not_called()
+        assert response is view_b.as_view.return_value.return_value
+
+    def test_404_when_no_view_registered_for_slug_model(self):
+        import pytest
+        from django.http import Http404
+        from netbox.registry import registry
+
+        from netbox_custom_objects_tab import views
+
+        registry["views"]["netbox_custom_objects"] = {"table28model": []}
+        cot = MagicMock()
+        cot.get_model.return_value._meta.model_name = "table28model"
+
+        try:
+            with patch.object(views, "get_object_or_404", return_value=cot):
+                dispatch = views._make_co_dispatcher("custom_objects_type-a")
+                with pytest.raises(Http404):
+                    dispatch(MagicMock(), custom_object_type="type-b", pk=5)
+        finally:
+            registry["views"].pop("netbox_custom_objects", None)
