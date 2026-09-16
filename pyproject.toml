@@ -36,7 +36,7 @@ where = ["."]
 include = ["netbox_custom_objects_tab*"]
 
 [tool.setuptools.package-data]
-netbox_custom_objects_tab = ["**/*", "templates/**"]
+netbox_custom_objects_tab = ["**/*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

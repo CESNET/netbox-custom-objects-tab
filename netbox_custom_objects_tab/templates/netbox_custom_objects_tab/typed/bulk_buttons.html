@@ -1,0 +1,20 @@
+{% if can_change or can_delete %}
+    <div class="bulk-action-buttons">
+        {% if can_change %}
+            <button type="submit"
+                    name="_edit"
+                    formaction="{% url 'plugins:netbox_custom_objects:customobject_bulk_edit' custom_object_type=custom_object_type.slug %}?return_url={{ return_url|urlencode:'' }}"
+                    class="btn btn-yellow">
+                <i class="mdi mdi-pencil" aria-hidden="true"></i> Bulk Edit
+            </button>
+        {% endif %}
+        {% if can_delete %}
+            <button type="submit"
+                    name="_delete"
+                    formaction="{% url 'plugins:netbox_custom_objects:customobject_bulk_delete' custom_object_type=custom_object_type.slug %}?return_url={{ return_url|urlencode:'' }}"
+                    class="btn btn-red">
+                <i class="mdi mdi-trash-can-outline" aria-hidden="true"></i> Bulk Delete
+            </button>
+        {% endif %}
+    </div>
+{% endif %}

@@ -21,19 +21,10 @@ def _resolve_dynamic_custom_object_models():
 
     A restart is required whenever a new Custom Object Type is added.
     """
-    try:
-        from netbox_custom_objects.models import CustomObject
-    except ImportError:
-        logger.warning("netbox_custom_objects plugin not installed — skipping")
-        return []
-
-    try:
-        app_config = apps.get_app_config(_CUSTOM_OBJECTS_APP)
-    except LookupError:
-        logger.warning("netbox_custom_objects app not found — skipping")
-        return []
+    from netbox_custom_objects.models import CustomObject
 
     # Filter to dynamic CO models only (subclasses of CustomObject, not CustomObject itself).
+    app_config = apps.get_app_config(_CUSTOM_OBJECTS_APP)
     return [m for m in app_config.get_models() if issubclass(m, CustomObject) and m is not CustomObject]
 
 
@@ -110,7 +101,6 @@ def _make_co_dispatcher(action_name):
             raise Http404(f"No '{action_name}' tab registered for {custom_object_type}")
         return view_cls.as_view()(request, custom_object_type=custom_object_type, pk=pk, **kwargs)
 
-    dispatch.__name__ = f"{action_name}_co_dispatch"
     return dispatch
 
 
@@ -128,12 +118,9 @@ def _inject_co_urls():
       ``plugins:netbox_custom_objects:customobject_{action}``
     so each typed tab gets ``customobject_custom_objects_{slug}``.
     """
-    try:
-        import netbox_custom_objects.urls as co_urls
-        from django.urls import path as url_path
-        from netbox.registry import registry
-    except ImportError:
-        return
+    import netbox_custom_objects.urls as co_urls
+    from django.urls import path as url_path
+    from netbox.registry import registry
 
     # Action names of the typed-tab views we registered on CO dynamic models.
     action_names = set()

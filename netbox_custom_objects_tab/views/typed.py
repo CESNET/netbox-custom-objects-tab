@@ -44,10 +44,7 @@ def _build_q_for_field(host_ct_id, instance_pk, field_info):
     last two are only meaningful for polymorphic fields. Returns Q() (an empty
     no-op filter) if the field can't be resolved, so callers can OR it safely.
     """
-    field_name = field_info[0]
-    field_type = field_info[1]
-    is_poly = field_info[3] if len(field_info) >= 5 else False
-    through_model_name = field_info[4] if len(field_info) >= 5 else None
+    field_name, field_type, _label, is_poly, through_model_name = field_info
 
     if field_type == CustomFieldTypeChoices.TYPE_OBJECT:
         if is_poly:
@@ -168,15 +165,11 @@ def _build_add_links(custom_object_type_slug, host_instance, field_infos, return
 
     links = []
     seen = set()
-    for field_info in field_infos:
-        field_name = field_info[0]
+    for field_name, field_type, field_label, is_poly, _through in field_infos:
         if field_name in seen:
             continue
         seen.add(field_name)
-
-        field_type = field_info[1]
-        field_label = (field_info[2] if len(field_info) >= 3 and field_info[2] else field_name) or field_name
-        is_poly = len(field_info) >= 5 and field_info[3]
+        field_label = field_label or field_name
 
         if not is_poly:
             prefill = {field_name: host_pk}
@@ -196,6 +189,19 @@ def _build_add_links(custom_object_type_slug, host_instance, field_infos, return
             }
         )
     return links
+
+
+def _host_q(host_ct_id, instance_pk, field_infos):
+    """OR of every field's Q for this host; None when no field could be resolved
+    (an empty Q() would match ALL rows, so callers must not filter on it)."""
+    q_filter = Q()
+    has_filter = False
+    for info in field_infos:
+        q = _build_q_for_field(host_ct_id, instance_pk, info)
+        if q.children:
+            q_filter |= q
+            has_filter = True
+    return q_filter if has_filter else None
 
 
 def _count_for_type(custom_object_type, field_infos, host_ct_id):
@@ -226,15 +232,8 @@ def _count_for_type(custom_object_type, field_infos, host_ct_id):
             )
             return None
 
-        q_filter = Q()
-        has_filter = False
-        for info in field_infos:
-            q = _build_q_for_field(host_ct_id, instance.pk, info)
-            if q.children:
-                q_filter |= q
-                has_filter = True
-
-        if not has_filter:
+        q_filter = _host_q(host_ct_id, instance.pk, field_infos)
+        if q_filter is None:
             return None
 
         total = dynamic_model.objects.filter(q_filter).distinct().count()
@@ -274,45 +273,31 @@ def _make_typed_tab_view(model_class, custom_object_type, field_infos, weight, h
             # Re-fetch CustomObjectType at request time (may have changed since ready())
             from netbox_custom_objects.models import CustomObjectType as COTModel
 
-            error_context = {
-                "object": instance,
-                "tab": self.tab,
-                "base_template": _get_base_template(instance),
-                "table": None,
-                "preferences": {"pagination.placement": "bottom"},
-            }
+            cot = COTModel.objects.filter(pk=cot_pk).first()
             try:
-                cot = COTModel.objects.get(pk=cot_pk)
-            except COTModel.DoesNotExist:
-                return render(request, "netbox_custom_objects_tab/typed/tab.html", error_context)
-
-            try:
-                dynamic_model = cot.get_model()
+                dynamic_model = cot.get_model() if cot else None
             except Exception:
                 logger.exception("Could not get model for CustomObjectType %s", cot_pk)
-                return render(request, "netbox_custom_objects_tab/typed/tab.html", error_context)
+                dynamic_model = None
+            if dynamic_model is None:
+                return render(
+                    request,
+                    "netbox_custom_objects_tab/typed/tab.html",
+                    {
+                        "object": instance,
+                        "tab": self.tab,
+                        "base_template": _get_base_template(instance),
+                        "table": None,
+                        "preferences": {"pagination.placement": "bottom"},
+                    },
+                )
 
-            # Build base queryset: union of all field filters for this type.
-            # Polymorphic fields contribute Q(pk__in=<through subquery>) or a
-            # (content_type_id, object_id) pair, both handled by _build_q_for_field.
-            #
-            # An empty Q() is the identity element of `|`, so filter(Q()) returns
-            # ALL rows. Track has_filter (mirrors _count_for_type) and short-circuit
-            # to .none() if every _build_q_for_field call returned an empty Q —
-            # otherwise an unresolvable through model or unknown field type would
-            # silently widen the tab to every row of the target type.
-            q_filter = Q()
-            has_filter = False
-            for info in field_infos:
-                q = _build_q_for_field(host_ct_id, instance.pk, info)
-                if q.children:
-                    q_filter |= q
-                    has_filter = True
-
-            if has_filter:
-                base_qs = dynamic_model.objects.filter(q_filter).distinct()
-            else:
+            # Base queryset: OR of all field filters for this type (see _host_q).
+            q_filter = _host_q(host_ct_id, instance.pk, field_infos)
+            if q_filter is None:
                 base_qs = dynamic_model.objects.none()
+            else:
+                base_qs = dynamic_model.objects.filter(q_filter).distinct()
 
             # Apply filterset
             filterset_class = get_filterset_class(dynamic_model)
@@ -361,10 +346,7 @@ def _make_typed_tab_view(model_class, custom_object_type, field_infos, weight, h
             # Documented in README "Known Issues" and CHANGELOG [2.3.0].
             add_links = _build_add_links(cot.slug, instance, field_infos, return_url) if can_add else []
 
-            try:
-                add_label = cot.get_verbose_name() or str(cot)
-            except AttributeError:
-                add_label = str(cot)
+            add_label = cot.get_verbose_name() or str(cot)
 
             context = {
                 "object": instance,
@@ -388,7 +370,6 @@ def _make_typed_tab_view(model_class, custom_object_type, field_infos, weight, h
             return render(request, "netbox_custom_objects_tab/typed/tab.html", context)
 
     _TypedTabView.__name__ = f"{model_class.__name__}_{custom_object_type.slug}_TypedTabView"
-    _TypedTabView.__qualname__ = f"{model_class.__name__}_{custom_object_type.slug}_TypedTabView"
     return _TypedTabView
 
 
@@ -405,11 +386,7 @@ def register_typed_tabs(model_classes, weight):
         ]
 
         # Non-polymorphic fields: single related_object_type FK.
-        # is_polymorphic=False keeps this queryset disjoint from poly_fields
-        # below — a field row with both attrs set (legacy misconfig:
-        # is_polymorphic is immutable upstream but related_object_type isn't
-        # nulled when toggled) would otherwise hit both querysets. _record's
-        # seen_field_keys stays as defence in depth.
+        # is_polymorphic=False keeps this queryset disjoint from poly_fields below.
         non_poly_fields = list(
             CustomObjectTypeField.objects.filter(
                 is_polymorphic=False,
@@ -433,15 +410,10 @@ def register_typed_tabs(model_classes, weight):
         # -> list of (name, type, label, is_polymorphic, through_model_name)
         ct_cot_fields = defaultdict(list)
         ct_cot_map = {}  # (ct_id, cot_pk) -> CustomObjectType
-        seen_field_keys = set()  # (field.pk, ct_id) — de-dup if a field appears in both querysets
 
         def _record(field, ct_id, is_poly):
             if ct_id is None:
                 return
-            key_dup = (field.pk, ct_id)
-            if key_dup in seen_field_keys:
-                return
-            seen_field_keys.add(key_dup)
             key = (ct_id, field.custom_object_type_id)
             label = getattr(field, "label", "") or field.name
             through_name = field.through_model_name if is_poly else None
