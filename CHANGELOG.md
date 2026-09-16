@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Internal simplification (no behaviour change): shared `_host_q()` for the
+  badge and view querysets, single error-render path, `field_info` tuples
+  unpacked directly (always 5-tuples), unreachable import fallbacks and the
+  redundant field de-dup set removed, bulk-action buttons moved to one
+  `typed/bulk_buttons.html` include, duplicate `{% csrf_token %}` dropped,
+  `MANIFEST.in` removed (package-data already ships templates).
+
 ## [3.0.0] - 2026-09-16
 
 ### Removed

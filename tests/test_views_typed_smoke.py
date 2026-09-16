@@ -53,8 +53,8 @@ class TestCountForType:
         badge = _count_for_type(
             cot,
             [
-                ("ref_object", CustomFieldTypeChoices.TYPE_OBJECT),
-                ("ref_multi", CustomFieldTypeChoices.TYPE_MULTIOBJECT),
+                ("ref_object", CustomFieldTypeChoices.TYPE_OBJECT, "", False, None),
+                ("ref_multi", CustomFieldTypeChoices.TYPE_MULTIOBJECT, "", False, None),
             ],
             host_ct_id=10,
         )
@@ -76,9 +76,9 @@ class TestCountForType:
         badge = _count_for_type(
             cot,
             [
-                ("primary_device", CustomFieldTypeChoices.TYPE_OBJECT),
-                ("backup_device", CustomFieldTypeChoices.TYPE_OBJECT),
-                ("affected_devices", CustomFieldTypeChoices.TYPE_MULTIOBJECT),
+                ("primary_device", CustomFieldTypeChoices.TYPE_OBJECT, "", False, None),
+                ("backup_device", CustomFieldTypeChoices.TYPE_OBJECT, "", False, None),
+                ("affected_devices", CustomFieldTypeChoices.TYPE_MULTIOBJECT, "", False, None),
             ],
             host_ct_id=10,
         )
@@ -112,7 +112,9 @@ class TestCountForType:
         cot = MagicMock()
         cot.get_model.side_effect = RuntimeError("broken model")
         cot.pk = 123
-        badge = _count_for_type(cot, [("ref_object", CustomFieldTypeChoices.TYPE_OBJECT)], host_ct_id=10)
+        badge = _count_for_type(
+            cot, [("ref_object", CustomFieldTypeChoices.TYPE_OBJECT, "", False, None)], host_ct_id=10
+        )
         instance = MagicMock(pk=42)
 
         assert badge(instance) is None
@@ -498,7 +500,7 @@ class TestBuildAddLinks:
             links = _build_add_links(
                 "server",
                 self._make_host(42),
-                [("device", CustomFieldTypeChoices.TYPE_OBJECT, "Device")],
+                [("device", CustomFieldTypeChoices.TYPE_OBJECT, "Device", False, None)],
                 "/dcim/devices/42/",
             )
         assert links == []
@@ -513,7 +515,7 @@ class TestBuildAddLinks:
             links = _build_add_links(
                 "server",
                 self._make_host(42),
-                [("device", CustomFieldTypeChoices.TYPE_OBJECT, "Device")],
+                [("device", CustomFieldTypeChoices.TYPE_OBJECT, "Device", False, None)],
                 "/dcim/devices/42/custom-objects-server/",
             )
 
@@ -537,8 +539,8 @@ class TestBuildAddLinks:
                 "link",
                 self._make_host(7),
                 [
-                    ("primary_device", CustomFieldTypeChoices.TYPE_OBJECT, "Primary"),
-                    ("backup_device", CustomFieldTypeChoices.TYPE_OBJECT, "Backup"),
+                    ("primary_device", CustomFieldTypeChoices.TYPE_OBJECT, "Primary", False, None),
+                    ("backup_device", CustomFieldTypeChoices.TYPE_OBJECT, "Backup", False, None),
                 ],
                 "/dcim/devices/7/",
             )
@@ -562,8 +564,8 @@ class TestBuildAddLinks:
                 "x",
                 self._make_host(1),
                 [
-                    ("device", CustomFieldTypeChoices.TYPE_OBJECT, "Device"),
-                    ("device", CustomFieldTypeChoices.TYPE_MULTIOBJECT, "Device"),
+                    ("device", CustomFieldTypeChoices.TYPE_OBJECT, "Device", False, None),
+                    ("device", CustomFieldTypeChoices.TYPE_MULTIOBJECT, "Device", False, None),
                 ],
                 "/dcim/devices/1/",
             )
@@ -580,26 +582,10 @@ class TestBuildAddLinks:
             links = _build_add_links(
                 "x",
                 self._make_host(1),
-                [("device_ref", CustomFieldTypeChoices.TYPE_OBJECT, "")],
+                [("device_ref", CustomFieldTypeChoices.TYPE_OBJECT, "", False, None)],
                 "/dcim/devices/1/",
             )
         assert links[0]["label"] == "device_ref"
-
-    def test_two_tuple_field_infos_supported_label_defaults_to_name(self):
-        """Backward-compatible: 2-tuples (no label) work via star unpacking."""
-        from netbox_custom_objects_tab.views.typed import _build_add_links
-
-        with patch(
-            "netbox_custom_objects_tab.views.typed.reverse",
-            return_value="/plugins/custom-objects/x/add/",
-        ):
-            links = _build_add_links(
-                "x",
-                self._make_host(1),
-                [("device", CustomFieldTypeChoices.TYPE_OBJECT)],
-                "/dcim/devices/1/",
-            )
-        assert links[0]["label"] == "device"
 
     def test_return_url_with_query_string_is_url_encoded(self):
         """A return_url containing & and ? must be URL-encoded so it doesn't break the outer query string."""
@@ -612,7 +598,7 @@ class TestBuildAddLinks:
             links = _build_add_links(
                 "x",
                 self._make_host(1),
-                [("device", CustomFieldTypeChoices.TYPE_OBJECT, "Device")],
+                [("device", CustomFieldTypeChoices.TYPE_OBJECT, "Device", False, None)],
                 "/dcim/devices/1/custom-objects-x/?tag=foo&q=bar",
             )
         url = links[0]["url"]
