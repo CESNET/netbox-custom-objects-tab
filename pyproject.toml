@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "netbox-custom-objects-tab"
-version = "2.6.1"
-description = "NetBox plugin that adds a Custom Objects tab to object detail pages"
+version = "3.0.0"
+description = "NetBox plugin that adds one tab per Custom Object Type to object detail pages"
 readme = "README.md"
 requires-python = ">=3.12"
 license = "Apache-2.0"

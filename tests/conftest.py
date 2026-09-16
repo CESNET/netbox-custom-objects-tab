@@ -60,9 +60,6 @@ class _CustomFieldUIVisibleChoices:
 _mock("netbox")
 _mock("netbox.registry", registry={"views": {}})
 _mock("netbox.plugins", PluginConfig=type("PluginConfig", (), {}), get_plugin_config=MagicMock(return_value=[]))
-_NetBoxModelFilterSetForm = type("NetBoxModelFilterSetForm", (), {})
-_mock("netbox.forms", NetBoxModelFilterSetForm=_NetBoxModelFilterSetForm)
-_mock("netbox.forms.mixins", SavedFiltersMixin=type("SavedFiltersMixin", (), {}))
 
 # --- extras.* ---
 _mock("extras")
@@ -83,10 +80,6 @@ _mock(
     get_action_url=MagicMock(return_value="/x/"),
     get_default_template=MagicMock(side_effect=lambda model: f"{model._meta.app_label}/{model._meta.model_name}.html"),
 )
-_mock("utilities.paginator", EnhancedPaginator=MagicMock(), get_paginate_count=MagicMock())
-_mock("utilities.htmx", htmx_partial=MagicMock())
-_mock("utilities.forms")
-_mock("utilities.forms.fields", TagFilterField=MagicMock())
 _mock(
     "utilities.permissions",
     get_permission_for_model=MagicMock(return_value="netbox_custom_objects.add_customobject"),
@@ -134,13 +127,11 @@ _mock("netbox.tables", BaseTable=_FakeBaseTable)
 
 # --- netbox_custom_objects.* ---
 _mock("netbox_custom_objects")
-_mock("netbox_custom_objects.models", CustomObjectTypeField=MagicMock())
+_mock("netbox_custom_objects.models", CustomObjectTypeField=MagicMock(), CustomObjectType=MagicMock())
+_mock("netbox_custom_objects.related_tabs")
+_mock("netbox_custom_objects.related_tabs.registry", register_tabs=MagicMock())
 _mock("netbox_custom_objects.field_types", FIELD_TYPE_CLASS={})
 _mock("netbox_custom_objects.filtersets", get_filterset_class=MagicMock())
 _mock("netbox_custom_objects.dynamic_forms", build_filterset_form_class=MagicMock())
-_mock(
-    "netbox_custom_objects.choices",
-    CustomObjectFieldTypeChoices=MagicMock(TYPE_COORDINATES="coordinates"),
-)
 _CustomObjectTable = type("CustomObjectTable", (), {})
 _mock("netbox_custom_objects.tables", CustomObjectTable=_CustomObjectTable)

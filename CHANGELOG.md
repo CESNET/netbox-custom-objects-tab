@@ -5,6 +5,57 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0] - 2026-09-16
+
+### Removed
+
+- **Combined "Custom Objects" tab and its settings** (`combined_models`,
+  `combined_label`, `combined_weight`). `netbox-custom-objects` 0.7.0 ships the
+  same tab natively (`netbox_custom_objects/related_tabs/`, weight 2000, no
+  configuration, live on every referenced object and on Custom Object pages).
+  Our copy registered under the same view name and had silently become a
+  no-op next to it. Leftover `combined_*` keys in `PLUGINS_CONFIG` now only
+  produce a startup warning.
+- **Template override of `netbox_custom_objects/customobject.html`** and the
+  `template_override` module. Upstream's 0.7.0 template renders registered
+  model-view tabs itself via `{% plugin_extra_tabs %}`, so the typed tabs
+  reach Custom Object detail pages without shadowing the template.
+- **`custom_object_tab_tags` templatetag library.** Upstream 0.7.0 ships a
+  library with the *same module name*; Django lets the later app in
+  `INSTALLED_APPS` win, so ours shadowed upstream's and broke
+  `{% custom_objects_tab_link %}` on every Custom Object page. Deleted.
+- `TODO.md` (combined-tab backlog only).
+
+### Changed
+
+- **Requires `netbox-custom-objects` ≥ 0.7.0.** `PluginConfig.ready()` probes
+  for the upstream `related_tabs` package and raises `ImproperlyConfigured`
+  with an upgrade hint when it is missing. Installs on 0.6.x must stay on
+  plugin 2.6.x.
+- **Typed tabs on Custom Object pages are served by a slug dispatcher.** The
+  shared `<type-slug>/<pk>/custom-objects-<slug>/` route now resolves the host
+  Custom Object Type from the URL per request and dispatches to the view
+  registered for exactly that model, instead of being bound to whichever host
+  model registered first.
+- `typed_models` remains opt-in (default `[]`); with the combined tab gone the
+  plugin is inactive until it is set.
+
+### Fixed
+
+- **Wrong host object / never-active tab on Custom Object pages** when one
+  Custom Object Type referenced several other Custom Object Types. The shared
+  route was bound to the first host model's view, so pages of the other host
+  types loaded the object with the same pk from the wrong table, and the
+  `ViewTab` placed in the context never matched the page's own registry entry.
+  Fixed by the dispatcher above; the `(label, weight)` comparison workaround
+  from 2.6.0 is no longer needed.
+
+### Upgrade notes
+
+1. `pip install -U 'netboxlabs-netbox-custom-objects>=0.7.0' netbox-custom-objects-tab`
+2. Remove `combined_models` / `combined_label` / `combined_weight` from `PLUGINS_CONFIG`.
+3. Restart NetBox.
+
 ## [2.6.1] - 2026-09-14
 
 ### Fixed
