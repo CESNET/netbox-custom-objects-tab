@@ -31,6 +31,9 @@ dev = ["pytest", "pytest-django", "ruff", "django-tables2"]
 Homepage = "https://github.com/CESNET/netbox-custom-objects-tab"
 Issues = "https://github.com/CESNET/netbox-custom-objects-tab/issues"
 
+[project.entry-points."netbox.plugins"]
+netbox_custom_objects_tab = "netbox_custom_objects_tab:config"
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["netbox_custom_objects_tab*"]
