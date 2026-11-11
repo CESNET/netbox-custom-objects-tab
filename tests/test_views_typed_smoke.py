@@ -62,6 +62,22 @@ class TestCountForType:
 
         assert badge(instance) is None
 
+    def test_returns_none_when_field_no_longer_exists(self):
+        """A field deleted/renamed after ready() raises FieldError; the badge must
+        hide the tab instead of crashing every host detail page."""
+        from django.core.exceptions import FieldError
+
+        from netbox_custom_objects_tab.views.typed import _count_for_type
+
+        cot, dynamic_model, _ = self._make_custom_object_type(distinct_count=1)
+        dynamic_model.objects.filter.side_effect = FieldError("Cannot resolve keyword 'device'")
+        badge = _count_for_type(
+            cot,
+            [("device", CustomFieldTypeChoices.TYPE_OBJECT, "", False, None)],
+            host_ct_id=10,
+        )
+        assert badge(MagicMock(pk=1)) is None
+
     def test_uses_single_filter_with_OR_of_field_predicates(self):
         """The badge must build one Q-OR-Q expression and pass it to a single
         filter() call so .distinct() can deduplicate rows matching multiple
