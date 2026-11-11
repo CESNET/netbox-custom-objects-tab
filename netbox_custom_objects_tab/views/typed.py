@@ -4,6 +4,7 @@ from urllib.parse import urlencode
 
 from django.apps import apps
 from django.contrib.contenttypes.models import ContentType
+from django.core.exceptions import FieldError
 from django.db.models import Q
 from django.db.utils import OperationalError, ProgrammingError
 from django.shortcuts import get_object_or_404, render
@@ -236,7 +237,16 @@ def _count_for_type(custom_object_type, field_infos, host_ct_id):
         if q_filter is None:
             return None
 
-        total = dynamic_model.objects.filter(q_filter).distinct().count()
+        try:
+            total = dynamic_model.objects.filter(q_filter).distinct().count()
+        except FieldError:
+            # field_infos is snapshotted at ready(); a field deleted/renamed since then must not
+            # crash every host detail page (the badge renders on all tabs). Restart re-registers.
+            logger.warning(
+                "CustomObjectType %s fields changed since startup — badge hidden until NetBox restarts",
+                custom_object_type.pk,
+            )
+            return None
         return total if total > 0 else None
 
     return _badge
@@ -297,7 +307,12 @@ def _make_typed_tab_view(model_class, custom_object_type, field_infos, weight, h
             if q_filter is None:
                 base_qs = dynamic_model.objects.none()
             else:
-                base_qs = dynamic_model.objects.filter(q_filter).distinct()
+                try:
+                    base_qs = dynamic_model.objects.filter(q_filter).distinct()
+                except FieldError:
+                    # Stale field_infos (see _count_for_type): show an empty table, not a 500.
+                    logger.warning("CustomObjectType %s fields changed since startup", cot_pk)
+                    base_qs = dynamic_model.objects.none()
 
             # Apply filterset
             filterset_class = get_filterset_class(dynamic_model)
